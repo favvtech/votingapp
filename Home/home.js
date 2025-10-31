@@ -57,7 +57,7 @@
     };
 
     async function loadHeroImagesLocal() {
-        const base = '../images/testing/';
+        const base = 'images/testing/';
         const sets = [
             ['WhatsApp 06.jpg','WhatsApp 06.jpeg','WhatsApp 06.png','WhatsApp 6.jpg','WhatsApp 6.jpeg'],
             ['WhatsApp 07.jpg','WhatsApp 07.jpeg','WhatsApp 07.png','WhatsApp 7.jpg','WhatsApp 7.jpeg'],
@@ -142,16 +142,16 @@
         updateSlide();
         restartTimer();
 
-        // Lazy-load survey images from local folder: ../images/testing
+        // Lazy-load survey images from local folder: images/testing
         const surveyImgs = document.querySelectorAll('[data-survey-img][data-lazy]');
 
         // Provide candidates (webp/jpg/png) with graceful fallback per card
         const localCandidates = [
-            ['../images/testing/WhatsApp 01.jpg'],
-            ['../images/testing/WhatsApp 02.jpg'],
-            ['../images/testing/WhatsApp 03.jpg'],
-            ['../images/testing/WhatsApp 04.jpg'],
-            ['../images/testing/WhatsApp 05.jpg']
+            ['images/testing/WhatsApp 01.jpg'],
+            ['images/testing/WhatsApp 02.jpg'],
+            ['images/testing/WhatsApp 03.jpg'],
+            ['images/testing/WhatsApp 04.jpg'],
+            ['images/testing/WhatsApp 05.jpg']
         ].map(list => list.map(src => src.replace(/ /g, '%20')));
 
         const candidateMap = new WeakMap();
