@@ -1,10 +1,8 @@
 (() => {
-    const sliderRoot = document.querySelector('[data-hero-slider]');
-    const slideEl = document.querySelector('[data-hero-slide] img');
+    const yearEl = document.querySelector('[data-year]');
     const indicatorsRoot = document.querySelector('[data-indicators]');
     const prevBtn = document.querySelector('[data-prev]');
     const nextBtn = document.querySelector('[data-next]');
-    const yearEl = document.querySelector('[data-year]');
     const navToggle = document.querySelector('.nav-toggle');
     const navList = document.querySelector('[data-nav]');
     const navLinks = document.querySelectorAll('[data-navlink]');
@@ -45,113 +43,96 @@
     // default to Home on load
     setActiveNav(document.querySelector('[data-navlink].active'));
 
-    // no logo fallback needed; SVG icon is shipped with assets
+    // Hero carousel with fade transition - following exact pattern
+    const heroSlides = document.querySelectorAll(".hero-slide");
+    let currentSlideIndex = 0;
 
-    const state = {
-        urls: [],
-        candidates: [],
-        candidateIdx: [],
-        idx: 0,
-        timer: null,
-        intervalMs: 5000
-    };
-
-    async function loadHeroImagesLocal() {
+    // Load hero images and set as background
+    async function loadHeroImages() {
         const base = 'images/testing/';
-        const sets = [
-            ['WhatsApp 06.jpg','WhatsApp 06.jpeg','WhatsApp 06.png','WhatsApp 6.jpg','WhatsApp 6.jpeg'],
-            ['WhatsApp 07.jpg','WhatsApp 07.jpeg','WhatsApp 07.png','WhatsApp 7.jpg','WhatsApp 7.jpeg'],
-            ['WhatsApp 08.jpg','WhatsApp 08.jpeg','WhatsApp 08.png','WhatsApp 8.jpg','WhatsApp 8.jpeg'],
-            ['WhatsApp 09.jpg','WhatsApp 09.jpeg','WhatsApp 09.png','WhatsApp 9.jpg','WhatsApp 9.jpeg']
+        const imageSets = [
+            ['WhatsApp 06.jpg', 'WhatsApp 06.jpeg', 'WhatsApp 06.png', 'WhatsApp 6.jpg'],
+            ['WhatsApp 07.jpg', 'WhatsApp 07.jpeg', 'WhatsApp 07.png', 'WhatsApp 7.jpg'],
+            ['WhatsApp 08.jpg', 'WhatsApp 08.jpeg', 'WhatsApp 08.png', 'WhatsApp 8.jpg'],
+            ['WhatsApp 09.jpg', 'WhatsApp 09.jpeg', 'WhatsApp 09.png', 'WhatsApp 9.jpg']
         ];
-        state.candidates = sets.map(list => list.map(n => encodeURI(base + n)));
-        state.candidateIdx = new Array(sets.length).fill(0);
-        state.urls = state.candidates.map(list => list[0]);
+        
+        const loadPromises = imageSets.map((candidates, slideIndex) => {
+            return new Promise((resolve) => {
+                let loaded = false;
+                candidates.forEach((filename) => {
+                    if (loaded) return;
+                    const testImg = new Image();
+                    const url = (base + filename).replace(/ /g, '%20');
+                    testImg.onload = () => {
+                        if (!loaded && heroSlides[slideIndex]) {
+                            heroSlides[slideIndex].style.backgroundImage = `url(${url})`;
+                            loaded = true;
+                            resolve(url);
+                        }
+                    };
+                    testImg.onerror = () => {};
+                    testImg.src = url;
+                });
+            });
+        });
+        
+        await Promise.all(loadPromises);
     }
 
-    function preloadImages(urls) {
-        return Promise.all(urls.map(u => new Promise(resolve => {
-            const img = new Image();
-            img.onload = () => resolve(u);
-            img.onerror = () => resolve(u);
-            img.src = u;
-        })));
+    function showSlide(index) {
+        heroSlides.forEach((slide) => {
+            slide.classList.remove('active');
+        });
+        if (heroSlides[index]) {
+            heroSlides[index].classList.add('active');
+        }
+        
+        // Update indicators
+        if (indicatorsRoot) {
+            const dots = indicatorsRoot.querySelectorAll('.dot');
+            dots.forEach((dot, i) => {
+                if (i === index) dot.classList.add('active');
+                else dot.classList.remove('active');
+            });
+        }
     }
 
-    function renderIndicators() {
-        if (!indicatorsRoot) return;
+    function nextSlide() {
+        currentSlideIndex = (currentSlideIndex + 1) % heroSlides.length;
+        showSlide(currentSlideIndex);
+    }
+
+    function prevSlide() {
+        currentSlideIndex = (currentSlideIndex - 1 + heroSlides.length) % heroSlides.length;
+        showSlide(currentSlideIndex);
+    }
+
+    // Auto-advance every 5 seconds
+    setInterval(nextSlide, 5000);
+
+    // Previous/Next button handlers
+    if (prevBtn) prevBtn.addEventListener('click', () => { prevSlide(); });
+    if (nextBtn) nextBtn.addEventListener('click', () => { nextSlide(); });
+    
+    // Indicator click handlers
+    if (indicatorsRoot) {
         indicatorsRoot.innerHTML = '';
-        state.urls.forEach((_, i) => {
+        heroSlides.forEach((_, i) => {
             const dot = document.createElement('div');
-            dot.className = 'dot' + (i === state.idx ? ' active' : '');
+            dot.className = 'dot' + (i === currentSlideIndex ? ' active' : '');
             dot.addEventListener('click', () => {
-                state.idx = i;
-                updateSlide();
-                restartTimer();
+                currentSlideIndex = i;
+                showSlide(currentSlideIndex);
             });
             indicatorsRoot.appendChild(dot);
         });
     }
 
-    function updateSlide() {
-        const slides = document.querySelectorAll('.hero-slide');
-        slides.forEach((s, i) => {
-            if (i === 0) s.classList.add('is-active');
-            else s.classList.remove('is-active');
-        });
-        if (slideEl && state.urls[state.idx]) {
-            // Morph out current image (fade + slight zoom-in reset)
-            slideEl.style.opacity = '0';
-            slideEl.style.transform = 'scale(1.04)';
-            // attach per-slide fallback
-            slideEl.onerror = () => {
-                const ci = state.candidateIdx[state.idx] || 0;
-                const nextIdx = ci + 1;
-                const list = state.candidates[state.idx] || [];
-                if (nextIdx < list.length) {
-                    state.candidateIdx[state.idx] = nextIdx;
-                    slideEl.src = list[nextIdx];
-                } else {
-                    slideEl.onerror = null;
-                }
-            };
-            slideEl.onload = () => {
-                // Ensure reflow before animating in
-                void slideEl.offsetWidth;
-                requestAnimationFrame(() => {
-                    slideEl.style.opacity = '1';
-                    slideEl.style.transform = 'scale(1)';
-                });
-            };
-            slideEl.src = state.urls[state.idx];
-        }
-        renderIndicators();
-    }
-
-    function next() {
-        if (!state.urls.length) return;
-        state.idx = (state.idx + 1) % state.urls.length;
-        updateSlide();
-    }
-    function prev() {
-        if (!state.urls.length) return;
-        state.idx = (state.idx - 1 + state.urls.length) % state.urls.length;
-        updateSlide();
-    }
-
-    function restartTimer() {
-        if (state.timer) clearInterval(state.timer);
-        state.timer = setInterval(next, state.intervalMs);
-    }
-
-    prevBtn && prevBtn.addEventListener('click', () => { prev(); restartTimer(); });
-    nextBtn && nextBtn.addEventListener('click', () => { next(); restartTimer(); });
-
+    // Initialize carousel
     (async function init() {
-        await loadHeroImagesLocal();
-        if (!state.urls.length) return;
-        updateSlide();
-        restartTimer();
+        await loadHeroImages();
+        showSlide(currentSlideIndex);
 
         // Lazy-load survey images from local folder: images/testing
         const surveyImgs = document.querySelectorAll('[data-survey-img][data-lazy]');
