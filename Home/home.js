@@ -100,6 +100,9 @@
             else s.classList.remove('is-active');
         });
         if (slideEl && state.urls[state.idx]) {
+            // Morph out current image (fade + slight zoom-in reset)
+            slideEl.style.opacity = '0';
+            slideEl.style.transform = 'scale(1.04)';
             // attach per-slide fallback
             slideEl.onerror = () => {
                 const ci = state.candidateIdx[state.idx] || 0;
@@ -111,6 +114,14 @@
                 } else {
                     slideEl.onerror = null;
                 }
+            };
+            slideEl.onload = () => {
+                // Ensure reflow before animating in
+                void slideEl.offsetWidth;
+                requestAnimationFrame(() => {
+                    slideEl.style.opacity = '1';
+                    slideEl.style.transform = 'scale(1)';
+                });
             };
             slideEl.src = state.urls[state.idx];
         }
