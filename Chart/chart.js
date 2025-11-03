@@ -51,6 +51,7 @@
       if (ddPanel){
         const item = document.createElement('div'); item.className='dd-item'; item.textContent=c;
         item.onclick = (e)=>{
+          e.preventDefault();
           e.stopPropagation();
           setActive(i); 
           closeDD(); 
@@ -83,8 +84,13 @@
     if (ddPanel){
       ddPanel.onclick = (e)=>{
         e.stopPropagation();
+        e.preventDefault();
       };
       ddPanel.ontouchend = (e)=>{
+        e.stopPropagation();
+        e.preventDefault();
+      };
+      ddPanel.ontouchstart = (e)=>{
         e.stopPropagation();
       };
     }
@@ -102,6 +108,7 @@
     if (ddToggle){
       ddToggle.onclick = (e)=>{
         e.stopPropagation();
+        e.preventDefault();
         handleToggle();
       };
       ddToggle.ontouchend = (e)=>{
@@ -109,17 +116,23 @@
         e.stopPropagation();
         handleToggle();
       };
+      ddToggle.ontouchstart = (e)=>{
+        e.stopPropagation();
+      };
     }
     
-    // Only close when clicking directly on backdrop
+    // Only close when clicking directly on backdrop (surrounding area)
     if (ddBackdrop){
       ddBackdrop.onclick = (e)=>{
+        // Only close if clicking directly on backdrop, not on children
         if (e.target === ddBackdrop){
           e.stopPropagation();
+          e.preventDefault();
           closeDD();
         }
       };
       ddBackdrop.ontouchend = (e)=>{
+        // Only close if touching directly on backdrop, not on children
         if (e.target === ddBackdrop){
           e.preventDefault();
           e.stopPropagation();
@@ -127,7 +140,13 @@
         }
       };
     }
-    document.addEventListener('keydown', (e)=>{ if (e.key==='Escape') closeDD(); });
+    
+    // Close on Escape key only
+    document.addEventListener('keydown', (e)=>{ 
+      if (e.key==='Escape' && ddToggle && ddToggle.getAttribute('aria-expanded')==='true'){ 
+        closeDD(); 
+      } 
+    });
     function updateDDLabel(index){ if (ddLabel) ddLabel.textContent = categories[index] || 'Select category'; }
     buildOptions.updateDDLabel = updateDDLabel; // expose to setActive
   }

@@ -25,7 +25,7 @@
 .dd-panel{position:absolute;left:50%;width:50%;min-width:fit-content;top:calc(100% + 6px);background:var(--card-bg);border:1px solid var(--card-border);border-radius:8px;box-shadow:0 8px 20px rgba(0,0,0,.18);padding:2px;max-height:30vh;overflow:auto;animation:ddIn .2s ease-out forwards;transform-origin:top}
 .dd-item{padding:4px 5px;border-radius:6px;cursor:pointer;font-size:11px;line-height:1.4}
 .dd-item:hover{background:rgba(14,165,233,.1)}
-.dd-backdrop{position:fixed;inset:0;background:rgba(2,6,23,.35);backdrop-filter:blur(2px)}
+.dd-backdrop{position:fixed;inset:0;background:rgba(2,6,23,.65);backdrop-filter:blur(2px)}
 @keyframes ddIn{from{opacity:0;transform:translate(-50%,-8px) scale(0.95)}to{opacity:1;transform:translate(-50%,0) scale(1)}}
 .category-select{padding:6px 8px;border:1px solid #e5e7eb;border-radius:6px}
 .chart-wrap{border:1px solid var(--card-border);border-radius:16px;padding:10px 10px 14px;background:var(--card-bg);backdrop-filter:saturate(160%) blur(8px);position:relative;z-index:1}
