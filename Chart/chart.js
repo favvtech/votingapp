@@ -48,16 +48,50 @@
     // Track scrolling state to prevent accidental selections (must be defined before items)
     let isScrolling = false;
     let scrollTimeout = null;
+    let lastScrollTime = 0;
+    let scrollStartTime = 0;
     
     if (bsContent){
       bsContent.addEventListener('scroll', ()=>{
-        isScrolling = true;
+        const now = Date.now();
+        if (!isScrolling){
+          isScrolling = true;
+          scrollStartTime = now;
+        }
+        lastScrollTime = now;
         // Clear any pending timeout
         if (scrollTimeout) clearTimeout(scrollTimeout);
-        // Reset scrolling flag after scroll stops
+        // Reset scrolling flag after scroll stops - longer delay
         scrollTimeout = setTimeout(()=>{
           isScrolling = false;
-        }, 150);
+          scrollStartTime = 0;
+        }, 400); // Increased to 400ms
+      }, { passive: true });
+      
+      // Also track touch start on content to detect scroll gestures
+      bsContent.addEventListener('touchstart', (e)=>{
+        lastScrollTime = Date.now();
+        scrollStartTime = Date.now();
+        isScrolling = true;
+      }, { passive: true });
+      
+      bsContent.addEventListener('touchmove', (e)=>{
+        lastScrollTime = Date.now();
+        isScrolling = true;
+        if (scrollTimeout) clearTimeout(scrollTimeout);
+        scrollTimeout = setTimeout(()=>{
+          isScrolling = false;
+        }, 600); // Increased to 600ms
+      }, { passive: true });
+      
+      bsContent.addEventListener('touchend', (e)=>{
+        // Mark that scrolling just happened
+        lastScrollTime = Date.now();
+        // Keep scrolling flag for a bit longer
+        if (scrollTimeout) clearTimeout(scrollTimeout);
+        scrollTimeout = setTimeout(()=>{
+          isScrolling = false;
+        }, 600);
       }, { passive: true });
     }
     
@@ -74,10 +108,16 @@
         let itemTouchMoved = false;
         
         item.addEventListener('touchstart', (e)=>{
+          const now = Date.now();
+          // If recently scrolled, don't allow touch
+          if (isScrolling || (now - lastScrollTime) < 500){
+            itemTouchMoved = true; // Mark as moved to prevent selection
+            return;
+          }
           itemTouchStart = {
             x: e.touches[0].clientX,
             y: e.touches[0].clientY,
-            time: Date.now()
+            time: now
           };
           itemTouchMoved = false;
         }, { passive: true });
@@ -86,25 +126,41 @@
           if (itemTouchStart.time > 0){
             const deltaX = Math.abs(e.touches[0].clientX - itemTouchStart.x);
             const deltaY = Math.abs(e.touches[0].clientY - itemTouchStart.y);
-            // If moved more than 5px, consider it a scroll
-            if (deltaX > 5 || deltaY > 5){
+            // If moved more than 3px, consider it a scroll
+            if (deltaX > 3 || deltaY > 3){
               itemTouchMoved = true;
             }
           }
         }, { passive: true });
         
         item.addEventListener('touchend', (e)=>{
-          const touchDuration = Date.now() - itemTouchStart.time;
-          // Only trigger if:
+          const now = Date.now();
+          const touchDuration = now - itemTouchStart.time;
+          const timeSinceScroll = now - lastScrollTime;
+          
+          // STRICT: Only trigger if ALL conditions are met:
           // 1. Not currently scrolling
-          // 2. Touch didn't move (no scroll)
-          // 3. Touch duration is reasonable (not too long)
-          // 4. Touch duration is at least 50ms (prevents accidental taps)
-          if (!isScrolling && !itemTouchMoved && touchDuration < 500 && touchDuration >= 50){
-            e.preventDefault();
-            e.stopPropagation();
-            setActive(i); 
-            closeBS(); 
+          // 2. At least 800ms since last scroll (longer delay)
+          // 3. Touch didn't move at all (strict no-movement requirement)
+          // 4. Touch duration is reasonable (150-800ms for intentional tap)
+          // 5. Touch started when not scrolling
+          // 6. No scroll activity during touch
+          const canSelect = !isScrolling && 
+                             timeSinceScroll >= 800 && 
+                             !itemTouchMoved && 
+                             touchDuration >= 150 && 
+                             touchDuration <= 800 &&
+                             itemTouchStart.time > 0 &&
+                             (now - scrollStartTime) > 800;
+          
+          if (canSelect){
+            // Add a small delay to ensure scroll has fully stopped
+            setTimeout(()=>{
+              if (!isScrolling){
+                setActive(i); 
+                closeBS(); 
+              }
+            }, 100);
           }
           // Reset
           itemTouchStart = { x: 0, y: 0, time: 0 };
@@ -113,10 +169,13 @@
         
         // Mouse click handler (for desktop/testing)
         item.addEventListener('click', (e)=>{
+          const now = Date.now();
+          const timeSinceScroll = now - lastScrollTime;
           // Only trigger if:
           // 1. Not currently scrolling
-          // 2. No recent touch events (to avoid double-trigger)
-          if (!isScrolling && (Date.now() - itemTouchStart.time > 300 || itemTouchStart.time === 0)){
+          // 2. At least 500ms since last scroll
+          // 3. No recent touch events (to avoid double-trigger)
+          if (!isScrolling && timeSinceScroll >= 500 && (Date.now() - itemTouchStart.time > 300 || itemTouchStart.time === 0)){
             e.preventDefault();
             e.stopPropagation();
             setActive(i); 
