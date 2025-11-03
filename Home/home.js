@@ -182,42 +182,43 @@
         surveyImgs.forEach(img => io.observe(img));
     })();
 
-    // Mobile dropdown toggle for Vote nav
+    // Mobile dropdown toggle for Vote nav - using button approach
     const voteDropdownParent = document.querySelector('.nav-dropdown-parent');
-    const navListMobile = document.querySelector('[data-nav]') || document.querySelector('.nav-list');
-    
     if (voteDropdownParent) {
-        const voteLink = voteDropdownParent.querySelector('a');
+        const voteMobileToggle = voteDropdownParent.querySelector('.vote-mobile-toggle');
         const voteDropdown = voteDropdownParent.querySelector('.nav-dropdown');
         
-        // For mobile: toggle on click/tap
+        // For mobile: toggle on button click
         function isMobile() {
             return window.matchMedia('(max-width: 767px)').matches;
         }
         
-        if (voteLink && voteDropdown) {
-            // Always prevent default for mobile dropdown toggle
-            voteLink.addEventListener('click', (e) => {
-                // Check if we're in mobile view and nav menu is open
-                if (isMobile() && navListMobile && navListMobile.classList.contains('is-open')) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    e.stopImmediatePropagation();
-                    voteDropdownParent.classList.toggle('is-open');
-                    return false;
-                }
-                // On desktop, allow normal link behavior (hover dropdown)
-            }, true); // Use capture phase to ensure it runs first
+        if (voteMobileToggle && voteDropdown) {
+            // Toggle dropdown when button is clicked (mobile only)
+            voteMobileToggle.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                voteDropdownParent.classList.toggle('is-open');
+            });
+            
+            // Also handle touch events for better mobile support
+            voteMobileToggle.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                voteDropdownParent.classList.toggle('is-open');
+            });
             
             // Close dropdown when clicking outside on mobile
-            let clickOutsideHandler = null;
             if (isMobile()) {
-                clickOutsideHandler = (e) => {
-                    if (voteDropdownParent.classList.contains('is-open') && !voteDropdownParent.contains(e.target)) {
+                const clickOutsideHandler = (e) => {
+                    if (voteDropdownParent.classList.contains('is-open') && 
+                        !voteDropdownParent.contains(e.target) && 
+                        e.target !== voteMobileToggle) {
                         voteDropdownParent.classList.remove('is-open');
                     }
                 };
                 document.addEventListener('click', clickOutsideHandler);
+                document.addEventListener('touchend', clickOutsideHandler);
             }
         }
     }

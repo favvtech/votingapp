@@ -67,6 +67,8 @@ body {
 /* Dropdown */
 .nav-dropdown-parent { position: relative; }
 .nav-dropdown-parent > a { display: inline-flex; align-items: center; gap: 6px; vertical-align: middle; }
+.vote-mobile-toggle { display: none; background: none; border: none; padding: 8px 10px; margin: 0; cursor: pointer; text-align: left; width: 100%; font-size: inherit; font-family: inherit; color: inherit; align-items: center; gap: 6px; border-radius: 8px; transition: background-color 150ms ease; }
+.vote-mobile-toggle:hover { background: var(--bg-dim); }
 .dropdown-chevron { transition: transform 200ms ease; flex-shrink: 0; width: 12px; height: 12px; display: inline-block; }
 .nav-dropdown-parent:hover > a .dropdown-chevron,
 .nav-dropdown-parent:focus-within > a .dropdown-chevron,
@@ -238,10 +240,14 @@ body {
     .nav-list a.active::after { content: none; }
     .nav-backdrop { position: fixed; top: var(--header-h); left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.25); opacity: 0; pointer-events: none; transition: opacity 180ms ease; z-index: 25; }
     .nav-backdrop.is-visible { opacity: 1; pointer-events: auto; }
+    .nav-dropdown-parent > a { display: none !important; }
+    .vote-mobile-toggle { display: inline-flex !important; }
+    .vote-mobile-toggle .dropdown-chevron { transition: transform 200ms ease; }
+    .nav-dropdown-parent.is-open .vote-mobile-toggle .dropdown-chevron { transform: rotate(180deg); }
     .nav-dropdown { 
         position: static !important; 
         transform: none !important; 
-        margin: 8px 0 0 16px !important; 
+        margin: 8px 0 0 0 !important; 
         opacity: 0 !important; 
         max-height: 0 !important;
         overflow: hidden !important;
@@ -250,15 +256,18 @@ body {
         box-shadow: none !important; 
         border: none !important; 
         background: var(--bg-dim) !important;
-        transition: opacity 200ms ease, max-height 200ms ease !important;
+        border-radius: 8px !important;
+        transition: opacity 200ms ease, max-height 200ms ease, padding 200ms ease !important;
     }
     .nav-dropdown-parent.is-open .nav-dropdown {
         opacity: 1 !important;
         max-height: 200px !important;
         pointer-events: auto !important;
-        padding: 6px 0 !important;
+        padding: 8px 0 !important;
+        margin-top: 8px !important;
     }
     .nav-dropdown::before { display: none !important; }
+    .dropdown-item { margin: 0 12px !important; border-radius: 6px !important; }
 }
 
 /* CTA placeholder (layout only) */
