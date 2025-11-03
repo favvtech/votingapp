@@ -67,6 +67,8 @@
     });
     sel.addEventListener('change', ()=> setActive(Number(sel.value)) );
 
+    const mobileDropdown = document.querySelector('[data-mobile-dd]');
+    
     function openDD(){ 
       if (!ddToggle||!ddPanel||!ddBackdrop) return; 
       ddToggle.setAttribute('aria-expanded','true'); 
@@ -80,15 +82,13 @@
       ddBackdrop.hidden=true; 
     }
     
-    // Prevent clicks inside dropdown panel from closing it
+    // Prevent clicks inside dropdown panel from closing it - only stop propagation, don't prevent default
     if (ddPanel){
       ddPanel.onclick = (e)=>{
         e.stopPropagation();
-        e.preventDefault();
       };
       ddPanel.ontouchend = (e)=>{
         e.stopPropagation();
-        e.preventDefault();
       };
       ddPanel.ontouchstart = (e)=>{
         e.stopPropagation();
@@ -108,11 +108,9 @@
     if (ddToggle){
       ddToggle.onclick = (e)=>{
         e.stopPropagation();
-        e.preventDefault();
         handleToggle();
       };
       ddToggle.ontouchend = (e)=>{
-        e.preventDefault();
         e.stopPropagation();
         handleToggle();
       };
@@ -121,20 +119,47 @@
       };
     }
     
-    // Only close when clicking directly on backdrop (surrounding area)
+    // Document-level click listener: only close if clicking outside the dropdown
+    const handleDocumentClick = (e)=>{
+      if (!ddToggle || !ddPanel || !mobileDropdown || !ddBackdrop) return;
+      const isOpen = ddToggle.getAttribute('aria-expanded')==='true';
+      if (!isOpen) return;
+      
+      // Check what was clicked
+      const clickedOnBackdrop = e.target === ddBackdrop;
+      const clickedOnToggle = ddToggle.contains(e.target);
+      const clickedOnPanel = ddPanel.contains(e.target);
+      const clickedOnItem = e.target.classList && e.target.classList.contains('dd-item');
+      const clickedOutsideDropdown = !mobileDropdown.contains(e.target);
+      
+      // Close if:
+      // 1. Clicking directly on backdrop (surrounding area)
+      // 2. Clicking outside the entire dropdown container
+      // Don't close if clicking on toggle, panel, or items
+      if (clickedOnBackdrop){
+        // Clicking on backdrop - close it
+        closeDD();
+      } else if (clickedOutsideDropdown){
+        // Clicking outside dropdown - close it
+        closeDD();
+      }
+      // Otherwise (clicking on toggle/panel/item) - don't close (handled by their own handlers)
+    };
+    
+    // Use bubble phase so element handlers can stop propagation first
+    document.addEventListener('click', handleDocumentClick, false);
+    document.addEventListener('touchend', handleDocumentClick, false);
+    
+    // Backdrop click handler as fallback
     if (ddBackdrop){
       ddBackdrop.onclick = (e)=>{
-        // Only close if clicking directly on backdrop, not on children
         if (e.target === ddBackdrop){
           e.stopPropagation();
-          e.preventDefault();
           closeDD();
         }
       };
       ddBackdrop.ontouchend = (e)=>{
-        // Only close if touching directly on backdrop, not on children
         if (e.target === ddBackdrop){
-          e.preventDefault();
           e.stopPropagation();
           closeDD();
         }
