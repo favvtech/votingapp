@@ -184,6 +184,8 @@
 
     // Mobile dropdown toggle for Vote nav
     const voteDropdownParent = document.querySelector('.nav-dropdown-parent');
+    const navListMobile = document.querySelector('[data-nav]') || document.querySelector('.nav-list');
+    
     if (voteDropdownParent) {
         const voteLink = voteDropdownParent.querySelector('a');
         const voteDropdown = voteDropdownParent.querySelector('.nav-dropdown');
@@ -194,20 +196,26 @@
         }
         
         if (voteLink && voteDropdown) {
+            // Always prevent default for mobile dropdown toggle
             voteLink.addEventListener('click', (e) => {
                 if (isMobile()) {
                     e.preventDefault();
-                    voteDropdownParent.classList.toggle('is-open');
+                    e.stopPropagation();
+                    if (navListMobile && navListMobile.classList.contains('is-open')) {
+                        voteDropdownParent.classList.toggle('is-open');
+                    }
                 }
             });
             
             // Close dropdown when clicking outside on mobile
+            let clickOutsideHandler = null;
             if (isMobile()) {
-                document.addEventListener('click', (e) => {
-                    if (!voteDropdownParent.contains(e.target)) {
+                clickOutsideHandler = (e) => {
+                    if (voteDropdownParent.classList.contains('is-open') && !voteDropdownParent.contains(e.target)) {
                         voteDropdownParent.classList.remove('is-open');
                     }
-                });
+                };
+                document.addEventListener('click', clickOutsideHandler);
             }
         }
     }

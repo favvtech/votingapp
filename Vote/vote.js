@@ -234,20 +234,26 @@
         }
         
         if (voteLink && voteDropdown) {
+            // Always prevent default for mobile dropdown toggle
             voteLink.addEventListener('click', (e) => {
                 if (isMobile()) {
                     e.preventDefault();
-                    voteDropdownParent.classList.toggle('is-open');
+                    e.stopPropagation();
+                    if (navList && navList.classList.contains('is-open')) {
+                        voteDropdownParent.classList.toggle('is-open');
+                    }
                 }
             });
             
             // Close dropdown when clicking outside on mobile
+            let clickOutsideHandler = null;
             if (isMobile()) {
-                document.addEventListener('click', (e) => {
-                    if (!voteDropdownParent.contains(e.target)) {
+                clickOutsideHandler = (e) => {
+                    if (voteDropdownParent.classList.contains('is-open') && !voteDropdownParent.contains(e.target)) {
                         voteDropdownParent.classList.remove('is-open');
                     }
-                });
+                };
+                document.addEventListener('click', clickOutsideHandler);
             }
         }
     }
