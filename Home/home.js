@@ -181,6 +181,36 @@
 
         surveyImgs.forEach(img => io.observe(img));
     })();
+
+    // Mobile dropdown toggle for Vote nav
+    const voteDropdownParent = document.querySelector('.nav-dropdown-parent');
+    if (voteDropdownParent) {
+        const voteLink = voteDropdownParent.querySelector('a');
+        const voteDropdown = voteDropdownParent.querySelector('.nav-dropdown');
+        
+        // For mobile: toggle on click/tap
+        function isMobile() {
+            return window.matchMedia('(max-width: 767px)').matches;
+        }
+        
+        if (voteLink && voteDropdown) {
+            voteLink.addEventListener('click', (e) => {
+                if (isMobile()) {
+                    e.preventDefault();
+                    voteDropdownParent.classList.toggle('is-open');
+                }
+            });
+            
+            // Close dropdown when clicking outside on mobile
+            if (isMobile()) {
+                document.addEventListener('click', (e) => {
+                    if (!voteDropdownParent.contains(e.target)) {
+                        voteDropdownParent.classList.remove('is-open');
+                    }
+                });
+            }
+        }
+    }
 })();
 
 
