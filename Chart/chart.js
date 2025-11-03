@@ -50,12 +50,14 @@
       pills.appendChild(pill);
       if (ddPanel){
         const item = document.createElement('div'); item.className='dd-item'; item.textContent=c;
-        item.onclick = ()=>{
+        item.onclick = (e)=>{
+          e.stopPropagation();
           setActive(i); 
           closeDD(); 
         };
         item.ontouchend = (e)=>{
           e.preventDefault();
+          e.stopPropagation();
           setActive(i); 
           closeDD(); 
         };
@@ -76,21 +78,38 @@
       ddPanel.hidden=true; 
       ddBackdrop.hidden=true; 
     }
+    
+    // Prevent clicks inside dropdown panel from closing it
+    if (ddPanel){
+      ddPanel.onclick = (e)=>{
+        e.stopPropagation();
+      };
+      ddPanel.ontouchend = (e)=>{
+        e.stopPropagation();
+      };
+    }
+    
     if (ddToggle){
-      ddToggle.onclick = ()=>{
+      ddToggle.onclick = (e)=>{
+        e.stopPropagation();
         const exp = ddToggle.getAttribute('aria-expanded')==='true'; 
         exp ? closeDD() : openDD(); 
       };
       ddToggle.ontouchend = (e)=>{
         e.preventDefault();
+        e.stopPropagation();
         const exp = ddToggle.getAttribute('aria-expanded')==='true'; 
         exp ? closeDD() : openDD(); 
       };
     }
     if (ddBackdrop){
-      ddBackdrop.onclick = closeDD;
+      ddBackdrop.onclick = (e)=>{
+        e.stopPropagation();
+        closeDD();
+      };
       ddBackdrop.ontouchend = (e)=>{
         e.preventDefault();
+        e.stopPropagation();
         closeDD();
       };
     }
