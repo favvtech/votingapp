@@ -225,7 +225,7 @@
     // Mobile dropdown toggle for Vote nav
     const voteDropdownParent = document.querySelector('.nav-dropdown-parent');
     if (voteDropdownParent) {
-        const voteLink = voteDropdownParent.querySelector('a');
+        const voteLink = voteDropdownParent.querySelector('a[data-vote-link]') || voteDropdownParent.querySelector('a');
         const voteDropdown = voteDropdownParent.querySelector('.nav-dropdown');
         
         // For mobile: toggle on click/tap
@@ -236,14 +236,16 @@
         if (voteLink && voteDropdown) {
             // Always prevent default for mobile dropdown toggle
             voteLink.addEventListener('click', (e) => {
-                if (isMobile()) {
+                // Check if we're in mobile view and nav menu is open
+                if (isMobile() && navList && navList.classList.contains('is-open')) {
                     e.preventDefault();
                     e.stopPropagation();
-                    if (navList && navList.classList.contains('is-open')) {
-                        voteDropdownParent.classList.toggle('is-open');
-                    }
+                    e.stopImmediatePropagation();
+                    voteDropdownParent.classList.toggle('is-open');
+                    return false;
                 }
-            });
+                // On desktop, allow normal link behavior (hover dropdown)
+            }, true); // Use capture phase to ensure it runs first
             
             // Close dropdown when clicking outside on mobile
             let clickOutsideHandler = null;

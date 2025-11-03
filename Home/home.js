@@ -198,14 +198,16 @@
         if (voteLink && voteDropdown) {
             // Always prevent default for mobile dropdown toggle
             voteLink.addEventListener('click', (e) => {
-                if (isMobile()) {
+                // Check if we're in mobile view and nav menu is open
+                if (isMobile() && navListMobile && navListMobile.classList.contains('is-open')) {
                     e.preventDefault();
                     e.stopPropagation();
-                    if (navListMobile && navListMobile.classList.contains('is-open')) {
-                        voteDropdownParent.classList.toggle('is-open');
-                    }
+                    e.stopImmediatePropagation();
+                    voteDropdownParent.classList.toggle('is-open');
+                    return false;
                 }
-            });
+                // On desktop, allow normal link behavior (hover dropdown)
+            }, true); // Use capture phase to ensure it runs first
             
             // Close dropdown when clicking outside on mobile
             let clickOutsideHandler = null;
