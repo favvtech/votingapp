@@ -89,28 +89,42 @@
       };
     }
     
+    // Add debounce to prevent rapid toggling
+    let toggleTimeout = null;
+    const handleToggle = ()=>{
+      if (toggleTimeout) clearTimeout(toggleTimeout);
+      toggleTimeout = setTimeout(()=>{
+        const exp = ddToggle.getAttribute('aria-expanded')==='true'; 
+        exp ? closeDD() : openDD(); 
+      }, 150);
+    };
+    
     if (ddToggle){
       ddToggle.onclick = (e)=>{
         e.stopPropagation();
-        const exp = ddToggle.getAttribute('aria-expanded')==='true'; 
-        exp ? closeDD() : openDD(); 
+        handleToggle();
       };
       ddToggle.ontouchend = (e)=>{
         e.preventDefault();
         e.stopPropagation();
-        const exp = ddToggle.getAttribute('aria-expanded')==='true'; 
-        exp ? closeDD() : openDD(); 
+        handleToggle();
       };
     }
+    
+    // Only close when clicking directly on backdrop
     if (ddBackdrop){
       ddBackdrop.onclick = (e)=>{
-        e.stopPropagation();
-        closeDD();
+        if (e.target === ddBackdrop){
+          e.stopPropagation();
+          closeDD();
+        }
       };
       ddBackdrop.ontouchend = (e)=>{
-        e.preventDefault();
-        e.stopPropagation();
-        closeDD();
+        if (e.target === ddBackdrop){
+          e.preventDefault();
+          e.stopPropagation();
+          closeDD();
+        }
       };
     }
     document.addEventListener('keydown', (e)=>{ if (e.key==='Escape') closeDD(); });

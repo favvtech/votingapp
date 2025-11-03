@@ -22,11 +22,11 @@
 .mobile-dropdown{position:relative;display:none}
 .dd-toggle{display:flex;align-items:center;gap:8px;width:100%;justify-content:space-between;padding:12px 14px;border-radius:14px;border:1px solid #e5e7eb;background:#ffffff;font-weight:600;backdrop-filter:none}
 .dd-toggle svg{width:18px;height:18px}
-.dd-panel{position:absolute;left:0;right:0;top:calc(100% + 6px);background:var(--card-bg);border:1px solid var(--card-border);border-radius:14px;box-shadow:0 16px 40px rgba(0,0,0,.18);padding:6px;max-height:50vh;overflow:auto;animation:ddIn .16s ease forwards}
-.dd-item{padding:10px 12px;border-radius:10px;cursor:pointer}
+.dd-panel{position:absolute;left:50%;width:50%;min-width:fit-content;top:calc(100% + 6px);background:var(--card-bg);border:1px solid var(--card-border);border-radius:8px;box-shadow:0 8px 20px rgba(0,0,0,.18);padding:2px;max-height:30vh;overflow:auto;animation:ddIn .2s ease-out forwards;transform-origin:top}
+.dd-item{padding:4px 5px;border-radius:6px;cursor:pointer;font-size:11px;line-height:1.4}
 .dd-item:hover{background:rgba(14,165,233,.1)}
 .dd-backdrop{position:fixed;inset:0;background:rgba(2,6,23,.35);backdrop-filter:blur(2px)}
-@keyframes ddIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+@keyframes ddIn{from{opacity:0;transform:translate(-50%,-8px) scale(0.95)}to{opacity:1;transform:translate(-50%,0) scale(1)}}
 .category-select{padding:6px 8px;border:1px solid #e5e7eb;border-radius:6px}
 .chart-wrap{border:1px solid var(--card-border);border-radius:16px;padding:10px 10px 14px;background:var(--card-bg);backdrop-filter:saturate(160%) blur(8px);position:relative;z-index:1}
 .chart-title{margin:6px 6px 10px;font-size:18px}
@@ -47,10 +47,10 @@ svg{width:100%;height:auto;display:block}
   .pills{display:none}
   .mobile-dropdown{display:block;width:100%;position:relative;z-index:10}
   .dd-toggle{position:relative;z-index:11;pointer-events:auto !important;touch-action:manipulation;cursor:pointer}
-  .dd-panel{position:absolute;left:0;right:0;top:calc(100% + 6px);max-height:50vh;border-radius:16px;z-index:1000;pointer-events:auto !important}
+  .dd-panel{position:absolute;left:50%;width:50%;min-width:fit-content;top:calc(100% + 6px);max-height:25vh;border-radius:8px;z-index:1000;pointer-events:auto !important;padding:2px}
   .dd-backdrop{display:none;z-index:999;backdrop-filter:none;pointer-events:auto !important}
   .dd-backdrop:not([hidden]){display:block}
-  .dd-item{pointer-events:auto !important;touch-action:manipulation;cursor:pointer}
+  .dd-item{pointer-events:auto !important;touch-action:manipulation;cursor:pointer;padding:3px 4px;font-size:10px;line-height:1.4}
   .category-select{display:none}
   .chart-wrap{backdrop-filter:none;background:var(--card-bg);position:relative;z-index:1}
   [data-theme='dark'] .chart-wrap{background:rgba(22,27,41,.95)}
