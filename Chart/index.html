@@ -24,14 +24,20 @@
         <section class="charts-controls">
             <div class="pills" role="tablist" aria-label="Categories"></div>
             <div class="mobile-dropdown" data-mobile-dd>
-                <button class="dd-toggle" type="button" aria-expanded="false" aria-haspopup="true" data-dd-toggle>
-                    <span data-dd-label>Select category</span>
+                <button class="bs-toggle" type="button" aria-expanded="false" aria-haspopup="true" data-bs-toggle>
+                    <span data-bs-label>Select category</span>
                     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
                         <path d="M3.5 5.25L7 8.75L10.5 5.25" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                     </svg>
                 </button>
-                <div class="dd-panel" hidden data-dd-panel></div>
-                <div class="dd-backdrop" hidden data-dd-backdrop></div>
+                <div class="bs-sheet" hidden data-bs-sheet>
+                    <div class="bs-handle"></div>
+                    <div class="bs-header">
+                        <h3 class="bs-title">Select Category</h3>
+                    </div>
+                    <div class="bs-content" data-bs-content></div>
+                </div>
+                <div class="bs-overlay" hidden data-bs-overlay></div>
             </div>
             <select id="category" class="category-select" aria-label="Select category"></select>
         </section>

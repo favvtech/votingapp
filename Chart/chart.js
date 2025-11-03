@@ -36,61 +36,61 @@
   function buildOptions(){
     const sel = document.getElementById('category');
     const pills = document.querySelector('.pills');
-    const ddPanel = document.querySelector('[data-dd-panel]');
-    const ddLabel = document.querySelector('[data-dd-label]');
-    const ddToggle = document.querySelector('[data-dd-toggle]');
-    const ddBackdrop = document.querySelector('[data-dd-backdrop]');
+    const bsSheet = document.querySelector('[data-bs-sheet]');
+    const bsContent = document.querySelector('[data-bs-content]');
+    const bsLabel = document.querySelector('[data-bs-label]');
+    const bsToggle = document.querySelector('[data-bs-toggle]');
+    const bsOverlay = document.querySelector('[data-bs-overlay]');
     sel.innerHTML = '';
     pills.innerHTML = '';
-    if (ddPanel) ddPanel.innerHTML = '';
+    if (bsContent) bsContent.innerHTML = '';
     categories.forEach((c,i)=>{
       const o = document.createElement('option'); o.value=String(i); o.textContent=c; sel.appendChild(o);
       const pill = document.createElement('button'); pill.className='pill'; pill.role='tab'; pill.textContent=c; pill.setAttribute('aria-selected', i===0?'true':'false');
       pill.addEventListener('click', ()=> setActive(i));
       pills.appendChild(pill);
-      if (ddPanel){
-        const item = document.createElement('div'); item.className='dd-item'; item.textContent=c;
+      if (bsContent){
+        const item = document.createElement('button'); item.className='bs-item'; item.textContent=c; item.setAttribute('aria-selected', i===0?'true':'false');
         item.onclick = (e)=>{
           e.preventDefault();
           e.stopPropagation();
           setActive(i); 
-          closeDD(); 
+          closeBS(); 
         };
         item.ontouchend = (e)=>{
           e.preventDefault();
           e.stopPropagation();
           setActive(i); 
-          closeDD(); 
+          closeBS(); 
         };
-        ddPanel.appendChild(item);
+        bsContent.appendChild(item);
       }
     });
     sel.addEventListener('change', ()=> setActive(Number(sel.value)) );
 
     const mobileDropdown = document.querySelector('[data-mobile-dd]');
     
-    function openDD(){ 
-      if (!ddToggle||!ddPanel||!ddBackdrop) return; 
-      ddToggle.setAttribute('aria-expanded','true'); 
-      ddPanel.hidden=false; 
-      ddBackdrop.hidden=false; 
+    function openBS(){ 
+      if (!bsToggle||!bsSheet||!bsOverlay) return; 
+      bsToggle.setAttribute('aria-expanded','true'); 
+      bsSheet.hidden=false; 
+      bsOverlay.hidden=false; 
+      document.body.style.overflow = 'hidden';
     }
-    function closeDD(){ 
-      if (!ddToggle||!ddPanel||!ddBackdrop) return; 
-      ddToggle.setAttribute('aria-expanded','false'); 
-      ddPanel.hidden=true; 
-      ddBackdrop.hidden=true; 
+    function closeBS(){ 
+      if (!bsToggle||!bsSheet||!bsOverlay) return; 
+      bsToggle.setAttribute('aria-expanded','false'); 
+      bsSheet.hidden=true; 
+      bsOverlay.hidden=true; 
+      document.body.style.overflow = '';
     }
     
-    // Prevent clicks inside dropdown panel from closing it - only stop propagation, don't prevent default
-    if (ddPanel){
-      ddPanel.onclick = (e)=>{
+    // Handle bottom sheet interactions
+    if (bsSheet){
+      bsSheet.onclick = (e)=>{
         e.stopPropagation();
       };
-      ddPanel.ontouchend = (e)=>{
-        e.stopPropagation();
-      };
-      ddPanel.ontouchstart = (e)=>{
+      bsSheet.ontouchend = (e)=>{
         e.stopPropagation();
       };
     }
@@ -100,80 +100,101 @@
     const handleToggle = ()=>{
       if (toggleTimeout) clearTimeout(toggleTimeout);
       toggleTimeout = setTimeout(()=>{
-        const exp = ddToggle.getAttribute('aria-expanded')==='true'; 
-        exp ? closeDD() : openDD(); 
+        const exp = bsToggle.getAttribute('aria-expanded')==='true'; 
+        exp ? closeBS() : openBS(); 
       }, 150);
     };
     
-    if (ddToggle){
-      ddToggle.onclick = (e)=>{
+    if (bsToggle){
+      bsToggle.onclick = (e)=>{
         e.stopPropagation();
         handleToggle();
       };
-      ddToggle.ontouchend = (e)=>{
+      bsToggle.ontouchend = (e)=>{
         e.stopPropagation();
         handleToggle();
-      };
-      ddToggle.ontouchstart = (e)=>{
-        e.stopPropagation();
       };
     }
     
-    // Document-level click listener: only close if clicking outside the dropdown
-    const handleDocumentClick = (e)=>{
-      if (!ddToggle || !ddPanel || !mobileDropdown || !ddBackdrop) return;
-      const isOpen = ddToggle.getAttribute('aria-expanded')==='true';
-      if (!isOpen) return;
+    // Swipe to dismiss functionality
+    let touchStartY = 0;
+    let touchCurrentY = 0;
+    let isDragging = false;
+    
+    if (bsSheet){
+      const bsHandle = bsSheet.querySelector('.bs-handle');
       
-      // Check what was clicked
-      const clickedOnBackdrop = e.target === ddBackdrop;
-      const clickedOnToggle = ddToggle.contains(e.target);
-      const clickedOnPanel = ddPanel.contains(e.target);
-      const clickedOnItem = e.target.classList && e.target.classList.contains('dd-item');
-      const clickedOutsideDropdown = !mobileDropdown.contains(e.target);
+      const startDrag = (e)=>{
+        if (!bsSheet.hidden){
+          touchStartY = e.touches ? e.touches[0].clientY : e.clientY;
+          isDragging = true;
+        }
+      };
       
-      // Close if:
-      // 1. Clicking directly on backdrop (surrounding area)
-      // 2. Clicking outside the entire dropdown container
-      // Don't close if clicking on toggle, panel, or items
-      if (clickedOnBackdrop){
-        // Clicking on backdrop - close it
-        closeDD();
-      } else if (clickedOutsideDropdown){
-        // Clicking outside dropdown - close it
-        closeDD();
+      const onDrag = (e)=>{
+        if (!isDragging || bsSheet.hidden) return;
+        touchCurrentY = e.touches ? e.touches[0].clientY : e.clientY;
+        const deltaY = touchCurrentY - touchStartY;
+        if (deltaY > 0){
+          bsSheet.style.transform = `translateY(${deltaY}px)`;
+        }
+      };
+      
+      const endDrag = ()=>{
+        if (!isDragging) return;
+        isDragging = false;
+        const deltaY = touchCurrentY - touchStartY;
+        if (deltaY > 100){
+          closeBS();
+        }
+        bsSheet.style.transform = '';
+        touchStartY = 0;
+        touchCurrentY = 0;
+      };
+      
+      if (bsHandle){
+        bsHandle.addEventListener('touchstart', startDrag);
+        bsHandle.addEventListener('mousedown', startDrag);
+        document.addEventListener('touchmove', onDrag);
+        document.addEventListener('mousemove', onDrag);
+        document.addEventListener('touchend', endDrag);
+        document.addEventListener('mouseup', endDrag);
       }
-      // Otherwise (clicking on toggle/panel/item) - don't close (handled by their own handlers)
-    };
+    }
     
-    // Use bubble phase so element handlers can stop propagation first
-    document.addEventListener('click', handleDocumentClick, false);
-    document.addEventListener('touchend', handleDocumentClick, false);
-    
-    // Backdrop click handler as fallback
-    if (ddBackdrop){
-      ddBackdrop.onclick = (e)=>{
-        if (e.target === ddBackdrop){
+    // Overlay click handler - close on overlay click
+    if (bsOverlay){
+      bsOverlay.onclick = (e)=>{
+        if (e.target === bsOverlay){
           e.stopPropagation();
-          closeDD();
+          closeBS();
         }
       };
-      ddBackdrop.ontouchend = (e)=>{
-        if (e.target === ddBackdrop){
+      bsOverlay.ontouchend = (e)=>{
+        if (e.target === bsOverlay){
           e.stopPropagation();
-          closeDD();
+          closeBS();
         }
       };
     }
     
-    // Close on Escape key only
+    // Close on Escape key
     document.addEventListener('keydown', (e)=>{ 
-      if (e.key==='Escape' && ddToggle && ddToggle.getAttribute('aria-expanded')==='true'){ 
-        closeDD(); 
+      if (e.key==='Escape' && bsToggle && bsToggle.getAttribute('aria-expanded')==='true'){ 
+        closeBS(); 
       } 
     });
-    function updateDDLabel(index){ if (ddLabel) ddLabel.textContent = categories[index] || 'Select category'; }
-    buildOptions.updateDDLabel = updateDDLabel; // expose to setActive
+    
+    function updateBSLabel(index){ 
+      if (bsLabel) bsLabel.textContent = categories[index] || 'Select category';
+      if (bsContent){
+        const items = bsContent.querySelectorAll('.bs-item');
+        items.forEach((item, i)=>{
+          item.setAttribute('aria-selected', i===index ? 'true' : 'false');
+        });
+      }
+    }
+    buildOptions.updateBSLabel = updateBSLabel; // expose to setActive
   }
 
   function niceMax(maxVal) {
@@ -340,7 +361,7 @@
     document.querySelectorAll('.pill').forEach((p,pi)=> p.setAttribute('aria-selected', pi===index?'true':'false'));
     const sel = document.getElementById('category');
     if (sel && sel.value !== String(index)) sel.value = String(index);
-    if (typeof buildOptions.updateDDLabel === 'function') buildOptions.updateDDLabel(index);
+    if (typeof buildOptions.updateBSLabel === 'function') buildOptions.updateBSLabel(index);
     render(index, {animateReplay:true});
   }
 
