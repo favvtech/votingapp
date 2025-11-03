@@ -50,16 +50,50 @@
       pills.appendChild(pill);
       if (ddPanel){
         const item = document.createElement('div'); item.className='dd-item'; item.textContent=c;
-        item.addEventListener('click', ()=>{ setActive(i); closeDD(); });
+        item.onclick = ()=>{
+          setActive(i); 
+          closeDD(); 
+        };
+        item.ontouchend = (e)=>{
+          e.preventDefault();
+          setActive(i); 
+          closeDD(); 
+        };
         ddPanel.appendChild(item);
       }
     });
     sel.addEventListener('change', ()=> setActive(Number(sel.value)) );
 
-    function openDD(){ if (!ddToggle||!ddPanel||!ddBackdrop) return; ddToggle.setAttribute('aria-expanded','true'); ddPanel.hidden=false; ddBackdrop.hidden=false; }
-    function closeDD(){ if (!ddToggle||!ddPanel||!ddBackdrop) return; ddToggle.setAttribute('aria-expanded','false'); ddPanel.hidden=true; ddBackdrop.hidden=true; }
-    ddToggle?.addEventListener('click', ()=>{ const exp = ddToggle.getAttribute('aria-expanded')==='true'; exp?closeDD():openDD(); });
-    ddBackdrop?.addEventListener('click', closeDD);
+    function openDD(){ 
+      if (!ddToggle||!ddPanel||!ddBackdrop) return; 
+      ddToggle.setAttribute('aria-expanded','true'); 
+      ddPanel.hidden=false; 
+      ddBackdrop.hidden=false; 
+    }
+    function closeDD(){ 
+      if (!ddToggle||!ddPanel||!ddBackdrop) return; 
+      ddToggle.setAttribute('aria-expanded','false'); 
+      ddPanel.hidden=true; 
+      ddBackdrop.hidden=true; 
+    }
+    if (ddToggle){
+      ddToggle.onclick = ()=>{
+        const exp = ddToggle.getAttribute('aria-expanded')==='true'; 
+        exp ? closeDD() : openDD(); 
+      };
+      ddToggle.ontouchend = (e)=>{
+        e.preventDefault();
+        const exp = ddToggle.getAttribute('aria-expanded')==='true'; 
+        exp ? closeDD() : openDD(); 
+      };
+    }
+    if (ddBackdrop){
+      ddBackdrop.onclick = closeDD;
+      ddBackdrop.ontouchend = (e)=>{
+        e.preventDefault();
+        closeDD();
+      };
+    }
     document.addEventListener('keydown', (e)=>{ if (e.key==='Escape') closeDD(); });
     function updateDDLabel(index){ if (ddLabel) ddLabel.textContent = categories[index] || 'Select category'; }
     buildOptions.updateDDLabel = updateDDLabel; // expose to setActive
@@ -237,29 +271,45 @@
   buildOptions();
   render(0, {animateReplay:true});
 
-  // replay and theme toggle
-  const replayBtn = document.querySelector('[data-replay]');
-  replayBtn?.addEventListener('click', ()=>{
-    const sel = document.getElementById('category');
-    render(Number(sel.value||0), {animateReplay:true});
-  });
+  // replay and theme toggle - use setTimeout to ensure DOM is ready
+  setTimeout(()=>{
+    const replayBtn = document.querySelector('[data-replay]');
+    if (replayBtn){
+      const handleReplay = ()=>{
+        const sel = document.getElementById('category');
+        render(Number(sel.value||0), {animateReplay:true});
+      };
+      replayBtn.onclick = handleReplay;
+      replayBtn.ontouchend = (e)=>{
+        e.preventDefault();
+        handleReplay();
+      };
+    }
 
-  const themeBtn = document.querySelector('[data-theme-toggle]');
-  // initialize theme from localStorage or system, and persist
-  (function initTheme(){
-    const stored = localStorage.getItem('theme');
-    const systemDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-    const theme = stored || (systemDark ? 'dark' : 'light');
-    document.documentElement.dataset.theme = theme;
-    if (themeBtn) themeBtn.textContent = theme==='dark' ? 'Light' : 'Dark';
-  })();
-  themeBtn?.addEventListener('click', ()=>{
-    const dark = document.documentElement.dataset.theme !== 'dark';
-    const next = dark ? 'dark' : 'light';
-    document.documentElement.dataset.theme = next;
-    localStorage.setItem('theme', next);
-    themeBtn.textContent = next==='dark' ? 'Light' : 'Dark';
-  });
+    const themeBtn = document.querySelector('[data-theme-toggle]');
+    // initialize theme from localStorage or system, and persist
+    (function initTheme(){
+      const stored = localStorage.getItem('theme');
+      const systemDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const theme = stored || (systemDark ? 'dark' : 'light');
+      document.documentElement.dataset.theme = theme;
+      if (themeBtn) themeBtn.textContent = theme==='dark' ? 'Light' : 'Dark';
+    })();
+    if (themeBtn){
+      const handleTheme = ()=>{
+        const dark = document.documentElement.dataset.theme !== 'dark';
+        const next = dark ? 'dark' : 'light';
+        document.documentElement.dataset.theme = next;
+        localStorage.setItem('theme', next);
+        themeBtn.textContent = next==='dark' ? 'Light' : 'Dark';
+      };
+      themeBtn.onclick = handleTheme;
+      themeBtn.ontouchend = (e)=>{
+        e.preventDefault();
+        handleTheme();
+      };
+    }
+  }, 100);
 })();
 
 
