@@ -55,10 +55,11 @@ svg{width:100%;height:auto;display:block}
   .dd-backdrop:not([hidden]){display:block}
   .dd-item{pointer-events:auto !important;touch-action:manipulation;cursor:pointer;padding:8px 10px;font-size:13px;line-height:1.5}
   .category-select{display:none}
-  .chart-wrap{backdrop-filter:none;background:var(--card-bg);position:relative;z-index:1}
+  .chart-wrap{backdrop-filter:none;background:var(--card-bg);position:relative;z-index:1;padding:10px 0 14px}
   [data-theme='dark'] .chart-wrap{background:rgba(22,27,41,.95)}
-  .svg-wrap{overflow-x:auto;overflow-y:auto;width:100%;-webkit-overflow-scrolling:touch}
-  svg{min-width:800px;width:800px;height:auto;display:block}
+  .chart-title{margin:6px 16px 10px}
+  .svg-wrap{overflow-x:auto;overflow-y:auto;width:100%;-webkit-overflow-scrolling:touch;margin:0}
+  svg{width:800px;max-width:none;height:auto;display:block}
   .btn{position:relative;z-index:10;pointer-events:auto !important;touch-action:manipulation;cursor:pointer;-webkit-tap-highlight-color:rgba(0,0,0,0.1)}
   .hero-actions{position:relative;z-index:10;pointer-events:auto !important}
 }
