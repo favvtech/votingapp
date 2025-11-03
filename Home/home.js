@@ -43,6 +43,33 @@
     // default to Home on load
     setActiveNav(document.querySelector('[data-navlink].active'));
 
+    // Desktop only: prevent navigating when clicking the top "Vote" link; allow only dropdown item to navigate
+    const voteDropdownParentDesktop = document.querySelector('.nav-dropdown-parent');
+    if (voteDropdownParentDesktop) {
+        const voteTopLink = voteDropdownParentDesktop.querySelector('a[data-vote-link]');
+        const isDesktop = () => window.matchMedia('(min-width: 768px)').matches;
+        if (voteTopLink) {
+            voteTopLink.addEventListener('click', (e) => {
+                if (!isDesktop()) return;
+                e.preventDefault();
+                voteDropdownParentDesktop.classList.toggle('is-open');
+            });
+            voteTopLink.addEventListener('keydown', (e) => {
+                if (!isDesktop()) return;
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    voteDropdownParentDesktop.classList.toggle('is-open');
+                }
+            });
+            document.addEventListener('click', (e) => {
+                if (!isDesktop()) return;
+                if (voteDropdownParentDesktop.classList.contains('is-open') && !voteDropdownParentDesktop.contains(e.target)) {
+                    voteDropdownParentDesktop.classList.remove('is-open');
+                }
+            });
+        }
+    }
+
     // Hero carousel with fade transition - following exact pattern
     const heroSlides = document.querySelectorAll(".hero-slide");
     let currentSlideIndex = 0;

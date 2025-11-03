@@ -89,18 +89,51 @@
         return `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><circle cx="60" cy="60" r="60" fill="${color}"/><text x="60" y="70" font-family="Arial" font-size="40" font-weight="bold" fill="white" text-anchor="middle">${name.charAt(0).toUpperCase()}</text></svg>`)}`;
     }
 
+    const categoryImageMap = {
+        "PEACEMAKER AWARDS": "peaceimage.jpeg",
+        "YSA OF THE YEAR (MALE)": "ysamale.jpeg",
+        "YSA OF THE YEAR (FEMALE)": "ysafemale.jpeg",
+        "ENTREPRENEUR OF THE YEAR": "enterpreneur.jpeg",
+        "MUSICAL VOICE AWARDS": "musical.jpeg",
+        "BEST DRESSED MALE": "dressedmale.jpeg",
+        "BEST DRESSED FEMALE": "dressedfemale.jpeg",
+        "YSA PARTICIPATION AWARD": "active.jpeg",
+        "MOST CHRISTLIKE AWARD": "christlike.jpeg",
+        "LEADERSHIP APPRECIATION AWARD": "leadership.jpeg"
+    };
+
+    function getCategoryImage(categoryTitle) {
+        const file = categoryImageMap[categoryTitle];
+        if (!file) return null;
+        // Vote page lives in /Vote, images live at /images/category
+        return `../images/category/${file}`;
+    }
+
+    function getBackgroundPosition(categoryTitle) {
+        // Default focus
+        let pos = 'center';
+        if (categoryTitle === 'BEST DRESSED FEMALE') pos = 'center 8%'; // show more upper
+        else if (categoryTitle === 'BEST DRESSED MALE') pos = 'center 85%'; // more lower (unchanged)
+        else if (categoryTitle === 'YSA OF THE YEAR (FEMALE)') pos = 'center 90%'; // show more lower
+        return pos;
+    }
+
     function createCategoryCard(category) {
         const card = document.createElement('div');
         card.className = 'category-card';
         card.dataset.categoryId = category.number;
 
-        // Generate gradient background based on category number
-        const hue = (category.number * 36) % 360;
+        // Background image per category with a soft overlay fallback
+        const imgSrc = getCategoryImage(category.title);
+        const hue = (category.number * 36) % 360; // keeps distinct accent if image missing
         const gradient = `linear-gradient(135deg, hsl(${hue}, 70%, 45%) 0%, hsl(${hue}, 70%, 30%) 100%)`;
+        const backgroundStyle = imgSrc
+            ? `background-image: linear-gradient(rgba(0,0,0,0.08), rgba(0,0,0,0.08)), url('${imgSrc}'); background-size: cover; background-position: ${getBackgroundPosition(category.title)};`
+            : `background: ${gradient};`;
 
         card.innerHTML = `
-            <div class="category-image" style="background: ${gradient};">
-                <div style="background: rgba(0,0,0,0.2); width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 64px; font-weight: 800; text-shadow: 0 4px 12px rgba(0,0,0,0.3);">${category.number}</div>
+            <div class="category-image" style="${backgroundStyle}">
+                <div style="background: rgba(0,0,0,0.10); width: 100%; height: 100%;"></div>
             </div>
             <div class="category-header">
                 <div>
@@ -227,6 +260,7 @@
     if (voteDropdownParent) {
         const voteMobileToggle = voteDropdownParent.querySelector('.vote-mobile-toggle');
         const voteDropdown = voteDropdownParent.querySelector('.nav-dropdown');
+        const voteTopLink = voteDropdownParent.querySelector('a[data-vote-link]');
         
         // For mobile: toggle on button click
         function isMobile() {
@@ -260,6 +294,31 @@
                 document.addEventListener('click', clickOutsideHandler);
                 document.addEventListener('touchend', clickOutsideHandler);
             }
+        }
+
+        // Desktop only: prevent navigating when clicking the top "Vote" link
+        if (voteTopLink) {
+            const isDesktop = () => window.matchMedia('(min-width: 768px)').matches;
+            voteTopLink.addEventListener('click', (e) => {
+                if (!isDesktop()) return;
+                e.preventDefault();
+                // Optionally toggle dropdown open on click (desktop)
+                voteDropdownParent.classList.toggle('is-open');
+            });
+            voteTopLink.addEventListener('keydown', (e) => {
+                if (!isDesktop()) return;
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    voteDropdownParent.classList.toggle('is-open');
+                }
+            });
+            // Close on click outside (desktop) when opened via click
+            document.addEventListener('click', (e) => {
+                if (!isDesktop()) return;
+                if (voteDropdownParent.classList.contains('is-open') && !voteDropdownParent.contains(e.target)) {
+                    voteDropdownParent.classList.remove('is-open');
+                }
+            });
         }
     }
 
