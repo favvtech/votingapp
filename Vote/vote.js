@@ -160,6 +160,22 @@
         return card;
     }
 
+    function updateOpenCategoryToast() {
+        const toast = document.querySelector('.open-category-toast');
+        if (!toast) return;
+        const openCard = document.querySelector('.category-card.is-open');
+        if (openCard) {
+            const titleEl = openCard.querySelector('.category-title');
+            const title = titleEl ? titleEl.textContent.trim() : '';
+            toast.textContent = title ? `${title} is currently open` : 'A category is currently open';
+            toast.classList.add('is-visible');
+            toast.removeAttribute('hidden');
+        } else {
+            toast.classList.remove('is-visible');
+            toast.setAttribute('hidden', '');
+        }
+    }
+
     function initializeCategories() {
         const grid = document.getElementById('categories-grid');
         if (!grid) return;
@@ -169,17 +185,30 @@
             grid.appendChild(card);
         });
 
+        // Helpers to enforce single-open behavior
+        function closeAllExcept(exceptCard) {
+            document.querySelectorAll('.category-card.is-open').forEach(openCard => {
+                if (openCard !== exceptCard) openCard.classList.remove('is-open');
+            });
+        }
+        function toggleCategory(card) {
+            const willOpen = !card.classList.contains('is-open');
+            closeAllExcept(willOpen ? card : null);
+            card.classList.toggle('is-open', willOpen);
+            updateOpenCategoryToast();
+        }
+
         // Add click handlers for category cards
         document.querySelectorAll('.category-card').forEach(card => {
             const toggle = card.querySelector('.category-toggle');
             card.addEventListener('click', (e) => {
-                if (e.target === toggle || toggle.contains(e.target)) return;
-                card.classList.toggle('is-open');
+                if (e.target === toggle || (toggle && toggle.contains(e.target))) return;
+                toggleCategory(card);
             });
             if (toggle) {
                 toggle.addEventListener('click', (e) => {
                     e.stopPropagation();
-                    card.classList.toggle('is-open');
+                    toggleCategory(card);
                 });
             }
         });
@@ -324,5 +353,18 @@
 
     // Initialize
     initializeCategories();
+
+    // If navigated with #categories-grid, ensure it scrolls into view below sticky header
+    (function handleHashScroll() {
+        if (location.hash === '#categories-grid') {
+            const el = document.getElementById('categories-grid');
+            if (el) {
+                // Delay to ensure layout is painted
+                setTimeout(() => {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }, 50);
+            }
+        }
+    })();
 })();
 

@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Charts Preview</title>
+    <link rel="stylesheet" href="chart.css" />
+</head>
+<body>
+    <main class="charts">
+        <section class="charts-hero">
+            <div class="hero-inner">
+                <div class="brand">
+                    <span class="dot"></span>
+                    <h1>Insights</h1>
+                </div>
+                <div class="hero-actions">
+                    <button class="btn ghost" data-replay>Replay</button>
+                    <button class="btn" data-theme-toggle aria-label="Toggle dark mode">Dark</button>
+                </div>
+            </div>
+        </section>
+
+        <section class="charts-controls">
+            <div class="pills" role="tablist" aria-label="Categories"></div>
+            <div class="mobile-dropdown" data-mobile-dd>
+                <button class="dd-toggle" type="button" aria-expanded="false" aria-haspopup="true" data-dd-toggle>
+                    <span data-dd-label>Select category</span>
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                        <path d="M3.5 5.25L7 8.75L10.5 5.25" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+                <div class="dd-panel" hidden data-dd-panel></div>
+                <div class="dd-backdrop" hidden data-dd-backdrop></div>
+            </div>
+            <select id="category" class="category-select" aria-label="Select category"></select>
+        </section>
+
+        <section class="chart-wrap glass">
+            <h2 class="chart-title" data-chart-title>Category</h2>
+            <div class="svg-wrap">
+                <svg id="chart" viewBox="0 0 800 420" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Category bar chart"></svg>
+                <div class="tooltip" data-tooltip hidden></div>
+            </div>
+        </section>
+    </main>
+
+    <script src="chart.js" defer></script>
+</body>
+</html>
+
+

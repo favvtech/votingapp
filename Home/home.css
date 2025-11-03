@@ -171,7 +171,7 @@ body {
 .hero-content { max-width: 720px; padding: 0 16px; margin: 0 auto; justify-self: center; }
 .hero-overlay h1 { margin: 0 0 12px; font-weight: 800; letter-spacing: 0.6px; text-shadow: 0 2px 14px rgba(0,0,0,0.35); text-align: center; }
 .hero-overlay p { margin: 0 0 20px; max-width: 60ch; color: rgba(255,255,255,0.9); text-align: center; }
-.btn-hero { display: inline-block; background: var(--gold); color: #1f1f1f; text-decoration: none; padding: 12px 20px; border-radius: 10px; font-weight: 700; box-shadow: 0 6px 14px rgba(0,0,0,0.18); }
+.btn-hero { display: inline-block; background: var(--gold); color: #1f1f1f; text-decoration: none; padding: 12px 20px; border-radius: 10px; font-weight: 700; box-shadow: 0 6px 14px rgba(0,0,0,0.18); cursor: pointer; }
 .btn-hero:hover { background: var(--gold-600); }
 
 /* Responsive hero title sizes */
@@ -187,8 +187,8 @@ body {
   .hero-overlay p { font-size: 18px; text-align: left; }
 }
 
-.hero-controls { position: absolute; inset: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 8px; z-index: 3; }
-.hero-btn { background: rgba(0,0,0,0.45); color: #fff; border: none; width: 36px; height: 36px; border-radius: 999px; cursor: pointer; }
+.hero-controls { position: absolute; inset: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 8px; z-index: 3; pointer-events: none; }
+.hero-btn { background: rgba(0,0,0,0.45); color: #fff; border: none; width: 36px; height: 36px; border-radius: 999px; cursor: pointer; pointer-events: auto; }
 .hero-btn:hover { background: rgba(0,0,0,0.6); }
 
 .hero-indicators { position: absolute; bottom: 18px; left: 20px; display: flex; gap: 10px; z-index: 3; }
