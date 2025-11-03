@@ -44,6 +44,23 @@
     sel.innerHTML = '';
     pills.innerHTML = '';
     if (bsContent) bsContent.innerHTML = '';
+    
+    // Track scrolling state to prevent accidental selections (must be defined before items)
+    let isScrolling = false;
+    let scrollTimeout = null;
+    
+    if (bsContent){
+      bsContent.addEventListener('scroll', ()=>{
+        isScrolling = true;
+        // Clear any pending timeout
+        if (scrollTimeout) clearTimeout(scrollTimeout);
+        // Reset scrolling flag after scroll stops
+        scrollTimeout = setTimeout(()=>{
+          isScrolling = false;
+        }, 150);
+      }, { passive: true });
+    }
+    
     categories.forEach((c,i)=>{
       const o = document.createElement('option'); o.value=String(i); o.textContent=c; sel.appendChild(o);
       const pill = document.createElement('button'); pill.className='pill'; pill.role='tab'; pill.textContent=c; pill.setAttribute('aria-selected', i===0?'true':'false');
@@ -51,18 +68,62 @@
       pills.appendChild(pill);
       if (bsContent){
         const item = document.createElement('button'); item.className='bs-item'; item.textContent=c; item.setAttribute('aria-selected', i===0?'true':'false');
-        item.onclick = (e)=>{
-          e.preventDefault();
-          e.stopPropagation();
-          setActive(i); 
-          closeBS(); 
-        };
-        item.ontouchend = (e)=>{
-          e.preventDefault();
-          e.stopPropagation();
-          setActive(i); 
-          closeBS(); 
-        };
+        
+        // Track touch state for scroll detection
+        let itemTouchStart = { x: 0, y: 0, time: 0 };
+        let itemTouchMoved = false;
+        
+        item.addEventListener('touchstart', (e)=>{
+          itemTouchStart = {
+            x: e.touches[0].clientX,
+            y: e.touches[0].clientY,
+            time: Date.now()
+          };
+          itemTouchMoved = false;
+        }, { passive: true });
+        
+        item.addEventListener('touchmove', (e)=>{
+          if (itemTouchStart.time > 0){
+            const deltaX = Math.abs(e.touches[0].clientX - itemTouchStart.x);
+            const deltaY = Math.abs(e.touches[0].clientY - itemTouchStart.y);
+            // If moved more than 5px, consider it a scroll
+            if (deltaX > 5 || deltaY > 5){
+              itemTouchMoved = true;
+            }
+          }
+        }, { passive: true });
+        
+        item.addEventListener('touchend', (e)=>{
+          const touchDuration = Date.now() - itemTouchStart.time;
+          // Only trigger if:
+          // 1. Not currently scrolling
+          // 2. Touch didn't move (no scroll)
+          // 3. Touch duration is reasonable (not too long)
+          // 4. Touch duration is at least 50ms (prevents accidental taps)
+          if (!isScrolling && !itemTouchMoved && touchDuration < 500 && touchDuration >= 50){
+            e.preventDefault();
+            e.stopPropagation();
+            setActive(i); 
+            closeBS(); 
+          }
+          // Reset
+          itemTouchStart = { x: 0, y: 0, time: 0 };
+          itemTouchMoved = false;
+        });
+        
+        // Mouse click handler (for desktop/testing)
+        item.addEventListener('click', (e)=>{
+          // Only trigger if:
+          // 1. Not currently scrolling
+          // 2. No recent touch events (to avoid double-trigger)
+          if (!isScrolling && (Date.now() - itemTouchStart.time > 300 || itemTouchStart.time === 0)){
+            e.preventDefault();
+            e.stopPropagation();
+            setActive(i); 
+            closeBS(); 
+          }
+        });
+        
         bsContent.appendChild(item);
       }
     });
@@ -76,6 +137,7 @@
       bsSheet.hidden=false; 
       bsOverlay.hidden=false; 
       document.body.style.overflow = 'hidden';
+      isScrolling = false;
     }
     function closeBS(){ 
       if (!bsToggle||!bsSheet||!bsOverlay) return; 
@@ -83,6 +145,8 @@
       bsSheet.hidden=true; 
       bsOverlay.hidden=true; 
       document.body.style.overflow = '';
+      isScrolling = false;
+      if (scrollTimeout) clearTimeout(scrollTimeout);
     }
     
     // Handle bottom sheet interactions
