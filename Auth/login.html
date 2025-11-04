@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Login / Signup - Voting App</title>
+    <link rel="stylesheet" href="login.css" />
+</head>
+<body>
+    <div class="auth-container">
+        <div class="auth-card">
+            <div class="auth-header">
+                <div class="logo-section">
+                    <div class="logo-circle"></div>
+                    <h1 class="auth-title">2025 Awards</h1>
+                </div>
+                <p class="auth-subtitle">Sign in or create your account</p>
+            </div>
+
+            <div class="auth-tabs">
+                <button class="tab-btn active" data-tab="login" type="button">Login</button>
+                <button class="tab-btn" data-tab="signup" type="button">Sign Up</button>
+            </div>
+
+            <div class="auth-content">
+                <!-- Login Form -->
+                <form class="auth-form active" id="loginForm" data-form="login">
+                    <div class="name-group">
+                        <div class="form-group">
+                            <label for="loginFirstname" class="form-label">First Name <span class="required">*</span></label>
+                            <input 
+                                type="text" 
+                                id="loginFirstname" 
+                                class="form-input" 
+                                placeholder="First name"
+                                required
+                                autocomplete="given-name"
+                            />
+                            <span class="form-error" data-error="loginFirstname"></span>
+                        </div>
+                        <div class="form-group">
+                            <label for="loginLastname" class="form-label">Last Name <span class="required">*</span></label>
+                            <input 
+                                type="text" 
+                                id="loginLastname" 
+                                class="form-input" 
+                                placeholder="Last name"
+                                required
+                                autocomplete="family-name"
+                            />
+                            <span class="form-error" data-error="loginLastname"></span>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="loginPhone" class="form-label">Phone Number <span class="required">*</span></label>
+                        <div class="phone-group">
+                            <div class="country-code-combo">
+                                <div class="combo-input-wrapper">
+                                    <input 
+                                        type="text" 
+                                        id="loginCountryCodeInput" 
+                                        class="combo-input" 
+                                        placeholder="+234"
+                                        value="+234"
+                                        autocomplete="tel-country-code"
+                                    />
+                                    <button type="button" class="combo-dropdown-btn" id="loginCountryCodeToggle" aria-expanded="false">
+                                        <svg class="dropdown-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                            <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                                        </svg>
+                                    </button>
+                                </div>
+                                <div class="country-code-dropdown" id="loginCountryCodeDropdown">
+                                    <button type="button" class="country-code-item" data-value="+234"><span class="country-flag">🇳🇬</span> +234</button>
+                                    <button type="button" class="country-code-item" data-value="+1"><span class="country-flag">🇺🇸</span> +1</button>
+                                    <button type="button" class="country-code-item" data-value="+44"><span class="country-flag">🇬🇧</span> +44</button>
+                                    <button type="button" class="country-code-item" data-value="+233"><span class="country-flag">🇬🇭</span> +233</button>
+                                    <button type="button" class="country-code-item" data-value="+254"><span class="country-flag">🇰🇪</span> +254</button>
+                                    <button type="button" class="country-code-item" data-value="+27"><span class="country-flag">🇿🇦</span> +27</button>
+                                    <button type="button" class="country-code-item" data-value="+91"><span class="country-flag">🇮🇳</span> +91</button>
+                                    <button type="button" class="country-code-item" data-value="+86"><span class="country-flag">🇨🇳</span> +86</button>
+                                    <button type="button" class="country-code-item" data-value="+81"><span class="country-flag">🇯🇵</span> +81</button>
+                                    <button type="button" class="country-code-item" data-value="+49"><span class="country-flag">🇩🇪</span> +49</button>
+                                    <button type="button" class="country-code-item" data-value="+33"><span class="country-flag">🇫🇷</span> +33</button>
+                                    <button type="button" class="country-code-item" data-value="+39"><span class="country-flag">🇮🇹</span> +39</button>
+                                    <button type="button" class="country-code-item" data-value="+61"><span class="country-flag">🇦🇺</span> +61</button>
+                                    <button type="button" class="country-code-item" data-value="+55"><span class="country-flag">🇧🇷</span> +55</button>
+                                    <button type="button" class="country-code-item" data-value="+52"><span class="country-flag">🇲🇽</span> +52</button>
+                                </div>
+                                <input type="hidden" id="loginCountryCode" value="+234" required>
+                            </div>
+                            <input 
+                                type="tel" 
+                                id="loginPhone" 
+                                class="form-input phone-input" 
+                                placeholder="Enter your phone number"
+                                required
+                                autocomplete="tel"
+                            />
+                        </div>
+                        <span class="form-error" data-error="loginPhone"></span>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="loginAccessCode" class="form-label">Access Code <span class="required">*</span></label>
+                        <input 
+                            type="text" 
+                            id="loginAccessCode" 
+                            class="form-input" 
+                            placeholder="Enter your access code"
+                            required
+                            maxlength="6"
+                            style="text-transform: uppercase; letter-spacing: 2px; font-family: monospace; font-weight: 600;"
+                        />
+                        <span class="form-error" data-error="loginAccessCode"></span>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Birthdate <span class="required">*</span></label>
+                        <div class="birthdate-group">
+                            <div class="birthdate-input-group">
+                                <label for="loginBirthDay" class="birthdate-label">Day</label>
+                                <div class="birthdate-combo">
+                                    <div class="combo-input-wrapper">
+                                        <input 
+                                            type="text" 
+                                            id="loginBirthDayInput" 
+                                            class="combo-input" 
+                                            placeholder="Day"
+                                            maxlength="2"
+                                            autocomplete="bday-day"
+                                        />
+                                        <button type="button" class="combo-dropdown-btn" id="loginBirthDayToggle" aria-expanded="false">
+                                            <svg class="dropdown-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                    <div class="birthdate-dropdown" id="loginBirthDayDropdown"></div>
+                                    <input type="hidden" id="loginBirthDay" value="" required>
+                                </div>
+                            </div>
+                            <div class="birthdate-input-group">
+                                <label for="loginBirthMonth" class="birthdate-label">Month</label>
+                                <div class="birthdate-combo">
+                                    <div class="combo-input-wrapper">
+                                        <input 
+                                            type="text" 
+                                            id="loginBirthMonthInput" 
+                                            class="combo-input" 
+                                            placeholder="Month"
+                                            autocomplete="bday-month"
+                                        />
+                                        <button type="button" class="combo-dropdown-btn" id="loginBirthMonthToggle" aria-expanded="false">
+                                            <svg class="dropdown-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                    <div class="birthdate-dropdown" id="loginBirthMonthDropdown">
+                                        <button type="button" class="birthdate-item" data-value="1" data-text="January">January</button>
+                                        <button type="button" class="birthdate-item" data-value="2" data-text="February">February</button>
+                                        <button type="button" class="birthdate-item" data-value="3" data-text="March">March</button>
+                                        <button type="button" class="birthdate-item" data-value="4" data-text="April">April</button>
+                                        <button type="button" class="birthdate-item" data-value="5" data-text="May">May</button>
+                                        <button type="button" class="birthdate-item" data-value="6" data-text="June">June</button>
+                                        <button type="button" class="birthdate-item" data-value="7" data-text="July">July</button>
+                                        <button type="button" class="birthdate-item" data-value="8" data-text="August">August</button>
+                                        <button type="button" class="birthdate-item" data-value="9" data-text="September">September</button>
+                                        <button type="button" class="birthdate-item" data-value="10" data-text="October">October</button>
+                                        <button type="button" class="birthdate-item" data-value="11" data-text="November">November</button>
+                                        <button type="button" class="birthdate-item" data-value="12" data-text="December">December</button>
+                                    </div>
+                                    <input type="hidden" id="loginBirthMonth" value="" required>
+                                </div>
+                            </div>
+                            <div class="birthdate-input-group">
+                                <label for="loginBirthYear" class="birthdate-label">Year</label>
+                                <div class="birthdate-combo">
+                                    <div class="combo-input-wrapper">
+                                        <input 
+                                            type="text" 
+                                            id="loginBirthYearInput" 
+                                            class="combo-input" 
+                                            placeholder="Year"
+                                            maxlength="4"
+                                            autocomplete="bday-year"
+                                        />
+                                        <button type="button" class="combo-dropdown-btn" id="loginBirthYearToggle" aria-expanded="false">
+                                            <svg class="dropdown-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                    <div class="birthdate-dropdown" id="loginBirthYearDropdown"></div>
+                                    <input type="hidden" id="loginBirthYear" value="" required>
+                                </div>
+                            </div>
+                        </div>
+                        <span class="form-error" data-error="loginBirthdate"></span>
+                    </div>
+
+                    <button type="submit" class="btn-submit" id="loginSubmit">
+                        <span class="btn-text">Login</span>
+                        <svg class="btn-icon" width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M7.5 15L12.5 10L7.5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </button>
+                </form>
+
+                <!-- Signup Form -->
+                <form class="auth-form" id="signupForm" data-form="signup">
+                    <div class="name-group">
+                        <div class="form-group">
+                            <label for="signupFirstname" class="form-label">First Name <span class="required">*</span></label>
+                            <input 
+                                type="text" 
+                                id="signupFirstname" 
+                                class="form-input" 
+                                placeholder="First name"
+                                required
+                                autocomplete="given-name"
+                            />
+                            <span class="form-error" data-error="signupFirstname"></span>
+                        </div>
+                        <div class="form-group">
+                            <label for="signupLastname" class="form-label">Last Name <span class="required">*</span></label>
+                            <input 
+                                type="text" 
+                                id="signupLastname" 
+                                class="form-input" 
+                                placeholder="Last name"
+                                required
+                                autocomplete="family-name"
+                            />
+                            <span class="form-error" data-error="signupLastname"></span>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="signupPhone" class="form-label">Phone Number <span class="required">*</span></label>
+                        <div class="phone-group">
+                            <div class="country-code-combo">
+                                <div class="combo-input-wrapper">
+                                    <input 
+                                        type="text" 
+                                        id="signupCountryCodeInput" 
+                                        class="combo-input" 
+                                        placeholder="+234"
+                                        value="+234"
+                                        autocomplete="tel-country-code"
+                                    />
+                                    <button type="button" class="combo-dropdown-btn" id="signupCountryCodeToggle" aria-expanded="false">
+                                        <svg class="dropdown-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                            <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                                        </svg>
+                                    </button>
+                                </div>
+                                <div class="country-code-dropdown" id="signupCountryCodeDropdown">
+                                    <button type="button" class="country-code-item" data-value="+234"><span class="country-flag">🇳🇬</span> +234</button>
+                                    <button type="button" class="country-code-item" data-value="+1"><span class="country-flag">🇺🇸</span> +1</button>
+                                    <button type="button" class="country-code-item" data-value="+44"><span class="country-flag">🇬🇧</span> +44</button>
+                                    <button type="button" class="country-code-item" data-value="+233"><span class="country-flag">🇬🇭</span> +233</button>
+                                    <button type="button" class="country-code-item" data-value="+254"><span class="country-flag">🇰🇪</span> +254</button>
+                                    <button type="button" class="country-code-item" data-value="+27"><span class="country-flag">🇿🇦</span> +27</button>
+                                    <button type="button" class="country-code-item" data-value="+91"><span class="country-flag">🇮🇳</span> +91</button>
+                                    <button type="button" class="country-code-item" data-value="+86"><span class="country-flag">🇨🇳</span> +86</button>
+                                    <button type="button" class="country-code-item" data-value="+81"><span class="country-flag">🇯🇵</span> +81</button>
+                                    <button type="button" class="country-code-item" data-value="+49"><span class="country-flag">🇩🇪</span> +49</button>
+                                    <button type="button" class="country-code-item" data-value="+33"><span class="country-flag">🇫🇷</span> +33</button>
+                                    <button type="button" class="country-code-item" data-value="+39"><span class="country-flag">🇮🇹</span> +39</button>
+                                    <button type="button" class="country-code-item" data-value="+61"><span class="country-flag">🇦🇺</span> +61</button>
+                                    <button type="button" class="country-code-item" data-value="+55"><span class="country-flag">🇧🇷</span> +55</button>
+                                    <button type="button" class="country-code-item" data-value="+52"><span class="country-flag">🇲🇽</span> +52</button>
+                                </div>
+                                <input type="hidden" id="signupCountryCode" value="+234" required>
+                            </div>
+                            <input 
+                                type="tel" 
+                                id="signupPhone" 
+                                class="form-input phone-input" 
+                                placeholder="Enter your phone number"
+                                required
+                                autocomplete="tel"
+                            />
+                        </div>
+                        <span class="form-error" data-error="signupPhone"></span>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="signupEmail" class="form-label">Email <span class="optional">(Optional)</span></label>
+                        <input 
+                            type="email" 
+                            id="signupEmail" 
+                            class="form-input" 
+                            placeholder="Enter your email (optional)"
+                            autocomplete="email"
+                        />
+                        <span class="form-error" data-error="signupEmail"></span>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Birthdate <span class="required">*</span></label>
+                        <div class="birthdate-group">
+                            <div class="birthdate-input-group">
+                                <label for="birthDay" class="birthdate-label">Day</label>
+                                <div class="birthdate-combo">
+                                    <div class="combo-input-wrapper">
+                                        <input 
+                                            type="text" 
+                                            id="birthDayInput" 
+                                            class="combo-input" 
+                                            placeholder="Day"
+                                            maxlength="2"
+                                            autocomplete="bday-day"
+                                        />
+                                        <button type="button" class="combo-dropdown-btn" id="birthDayToggle" aria-expanded="false">
+                                            <svg class="dropdown-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                    <div class="birthdate-dropdown" id="birthDayDropdown"></div>
+                                    <input type="hidden" id="birthDay" value="" required>
+                                </div>
+                            </div>
+                            <div class="birthdate-input-group">
+                                <label for="birthMonth" class="birthdate-label">Month</label>
+                                <div class="birthdate-combo">
+                                    <div class="combo-input-wrapper">
+                                        <input 
+                                            type="text" 
+                                            id="birthMonthInput" 
+                                            class="combo-input" 
+                                            placeholder="Month"
+                                            autocomplete="bday-month"
+                                        />
+                                        <button type="button" class="combo-dropdown-btn" id="birthMonthToggle" aria-expanded="false">
+                                            <svg class="dropdown-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                    <div class="birthdate-dropdown" id="birthMonthDropdown">
+                                        <button type="button" class="birthdate-item" data-value="1" data-text="January">January</button>
+                                        <button type="button" class="birthdate-item" data-value="2" data-text="February">February</button>
+                                        <button type="button" class="birthdate-item" data-value="3" data-text="March">March</button>
+                                        <button type="button" class="birthdate-item" data-value="4" data-text="April">April</button>
+                                        <button type="button" class="birthdate-item" data-value="5" data-text="May">May</button>
+                                        <button type="button" class="birthdate-item" data-value="6" data-text="June">June</button>
+                                        <button type="button" class="birthdate-item" data-value="7" data-text="July">July</button>
+                                        <button type="button" class="birthdate-item" data-value="8" data-text="August">August</button>
+                                        <button type="button" class="birthdate-item" data-value="9" data-text="September">September</button>
+                                        <button type="button" class="birthdate-item" data-value="10" data-text="October">October</button>
+                                        <button type="button" class="birthdate-item" data-value="11" data-text="November">November</button>
+                                        <button type="button" class="birthdate-item" data-value="12" data-text="December">December</button>
+                                    </div>
+                                    <input type="hidden" id="birthMonth" value="" required>
+                                </div>
+                            </div>
+                            <div class="birthdate-input-group">
+                                <label for="birthYear" class="birthdate-label">Year</label>
+                                <div class="birthdate-combo">
+                                    <div class="combo-input-wrapper">
+                                        <input 
+                                            type="text" 
+                                            id="birthYearInput" 
+                                            class="combo-input" 
+                                            placeholder="Year"
+                                            maxlength="4"
+                                            autocomplete="bday-year"
+                                        />
+                                        <button type="button" class="combo-dropdown-btn" id="birthYearToggle" aria-expanded="false">
+                                            <svg class="dropdown-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                    <div class="birthdate-dropdown" id="birthYearDropdown"></div>
+                                    <input type="hidden" id="birthYear" value="" required>
+                                </div>
+                            </div>
+                        </div>
+                        <span class="form-error" data-error="birthdate"></span>
+                    </div>
+
+                    <button type="submit" class="btn-submit" id="signupSubmit">
+                        <span class="btn-text">Create Account</span>
+                        <svg class="btn-icon" width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M7.5 15L12.5 10L7.5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </button>
+                </form>
+            </div>
+
+            <div class="auth-message" id="authMessage" role="alert" aria-live="polite"></div>
+        </div>
+
+        <!-- Access Code Circle Icon (shown after successful signup) -->
+        <div class="access-code-circle" id="accessCodeCircle" style="display: none;">
+            <button type="button" class="ac-circle-btn" id="acCircleBtn" aria-label="Show access code">
+                <span class="ac-text">A/C</span>
+            </button>
+            <div class="access-code-popup" id="accessCodePopup">
+                <div class="ac-popup-header">
+                    <h3>Your Access Code</h3>
+                    <button type="button" class="ac-close" id="acClose" aria-label="Close">×</button>
+                </div>
+                <div class="ac-popup-content">
+                    <div class="ac-code-display" id="acCodeDisplay"></div>
+                    <p class="ac-warning">Keep this code safe. You'll need it to log in.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="auth-background">
+            <div class="bg-shape bg-shape-1"></div>
+            <div class="bg-shape bg-shape-2"></div>
+            <div class="bg-shape bg-shape-3"></div>
+        </div>
+    </div>
+
+    <script src="login.js"></script>
+</body>
+</html>
+

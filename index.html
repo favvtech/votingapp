@@ -40,7 +40,7 @@
                         </svg>
                     </button>
                     <div class="nav-dropdown">
-                        <a href="Vote/index.html" class="dropdown-item">
+                        <a href="Auth/login.html" class="dropdown-item">
                             <svg class="dropdown-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
                                 <path d="M8 8C10.2091 8 12 6.20914 12 4C12 1.79086 10.2091 0 8 0C5.79086 0 4 1.79086 4 4C4 6.20914 5.79086 8 8 8Z" fill="currentColor"/>
                                 <path d="M8 10C4.67 10 2 11.33 2 13V15H14V13C14 11.33 11.33 10 8 10Z" fill="currentColor"/>
@@ -49,14 +49,30 @@
                         </a>
                     </div>
                 </li>
-                <li><a href="#chart" data-navlink>Chart</a></li>
                 <li><a href="#contact" data-navlink>Contact</a></li>
+                <li class="mobile-logout-item" style="display:none;">
+                    <button type="button" class="mobile-logout-btn" id="mobileLogoutBtn" aria-label="Log out">
+                        <svg class="power-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 2v10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            <path d="M5.5 6.5a8 8 0 1 0 13 0" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        <span>Log out</span>
+                    </button>
+                </li>
             </ul>
             <div class="nav-backdrop" data-backdrop></div>
             <div class="nav-right">
                 <div class="cta-group">
-                    <a href="#signup" class="cta cta-signup">Signup</a>
-                    <a href="#login" class="cta cta-login">Login</a>
+                    <a href="Auth/login.html#signup" class="cta cta-signup">Signup</a>
+                    <a href="Auth/login.html#login" class="cta cta-login">Login</a>
+                </div>
+                <div class="profile-menu" id="profileMenu" style="display:none;">
+                    <button class="profile-trigger" id="profileTrigger" aria-haspopup="true" aria-expanded="false" aria-label="Profile menu">
+                        <span class="avatar-circle" aria-hidden="true">👤</span>
+                    </button>
+                    <div class="profile-dropdown" id="profileDropdown" role="menu">
+                        <button type="button" class="profile-item" id="logoutBtn" role="menuitem">Log out</button>
+                    </div>
                 </div>
             </div>
             
@@ -78,7 +94,7 @@
                         Join us for an elegant evening celebrating excellence, community, and impact.
                         Experience inspiring moments, live performances, and the presentation of coveted awards.
                     </p>
-                    <a href="Vote/index.html#categories-grid" class="btn-hero" role="button" aria-label="View award categories">View Categories</a>
+                    <a href="Auth/login.html" class="btn-hero" role="button" aria-label="View award categories" id="viewCategoriesBtn">View Categories</a>
                 </div>
             </div>
             <div class="hero-controls">
@@ -161,6 +177,7 @@
         </div>
     </footer>
 
+    <script src="shared.js" defer></script>
     <script src="Home/home.js" defer></script>
     <noscript>Please enable JavaScript to view the hero slider and images.</noscript>
 </body>

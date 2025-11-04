@@ -69,7 +69,7 @@
             title: "MOST CHRISTLIKE AWARD",
             nominees: [
                 "Ememekwe Emmanuel Chidera", "Eric Iorfa Maurice", "Ibrahim Fabolude",
-                "Love Ayjnde Feyisola", "Thomas Tunmise", "Confidence Felix", "Samuel Nasir"
+                "Love Ayinde Feyisola", "Thomas Tunmise", "Confidence Felix", "Samuel Nasir"
             ]
         },
         {
@@ -235,16 +235,11 @@
             });
         });
 
-        // Restore voted state from localStorage
-        const votes = JSON.parse(localStorage.getItem('votes') || '{}');
-        Object.keys(votes).forEach(categoryId => {
-            votes[categoryId].forEach(nominee => {
-                const btn = document.querySelector(`[data-nominee="${nominee}"][data-category="${categoryId}"]`);
-                if (btn) {
-                    btn.classList.add('voted');
-                    btn.textContent = 'Voted ✓';
-                }
-            });
+        // Reset all votes - clear localStorage and remove voted states
+        localStorage.removeItem('votes');
+        document.querySelectorAll('.vote-btn').forEach(btn => {
+            btn.classList.remove('voted');
+            btn.textContent = 'Vote';
         });
     }
 

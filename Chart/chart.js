@@ -26,12 +26,22 @@
     9: ["Olubisi O.","Olamilekan","Elisha Okon","Maurice","Abraham Suleiman","Adeosun O.","King Abel","Oreoluwa Adebiyi","Samuel Nasir"]
   };
 
-  function randomVotes(n){
-    // Create descending votes roughly matching sample range (50-240)
-    const out = Array.from({length:n}, (_,i)=> Math.round(240 - i * (180/Math.max(1,(n-1)))));
-    // Add slight random noise
-    return out.map(v=> Math.max(20, v + Math.round((Math.random()-0.5)*20)));
+  // Vote data will be fetched from backend
+  // Structure: { categoryIndex: { "nomineeName": voteCount, ... }, ... }
+  let voteData = {};
+  
+  // Function to update vote data from backend
+  // Call this function with new vote data to refresh the chart
+  function updateVoteData(newData) {
+    voteData = newData || {};
+    // Re-render current chart with new data
+    const sel = document.getElementById('category');
+    const currentIndex = sel ? Number(sel.value || 0) : 0;
+    render(currentIndex, { animateReplay: true });
   }
+  
+  // Expose updateVoteData globally for backend integration
+  window.updateVoteData = updateVoteData;
 
   function buildOptions(){
     const sel = document.getElementById('category');
@@ -298,6 +308,8 @@
 
   function niceMax(maxVal) {
     if (!isFinite(maxVal) || maxVal <= 0) return 1;
+    // Cap at 250 maximum
+    if (maxVal >= 250) return 250;
     const exp = Math.floor(Math.log10(maxVal));
     const base = Math.pow(10, exp);
     const n = maxVal / base;
@@ -330,11 +342,17 @@
     svg.appendChild(g);
 
     const names = (nomineesByCategory[idx] || ["A","B","C"]).slice();
-    const votes = randomVotes(names.length);
-    // Sort by votes desc to mimic sample
-    const data = names.map((n,i)=>({name:n,value:votes[i]})).sort((a,b)=>b.value-a.value);
+    // Get vote data from backend (voteData structure)
+    const categoryVotes = voteData[idx] || {};
+    // Map names to votes, defaulting to 0 if no vote data exists
+    const data = names.map((n) => ({
+      name: n,
+      value: categoryVotes[n] || 0
+    })).sort((a, b) => b.value - a.value);
 
-    const maxVal = niceMax(Math.max(...data.map(d=>d.value)));
+    // Handle empty data (all votes are 0)
+    const maxVote = Math.max(...data.map(d=>d.value), 0);
+    const maxVal = maxVote > 0 ? niceMax(maxVote) : 250; // Default to 250 if no votes
 
     // scales
     const bandCount = data.length;

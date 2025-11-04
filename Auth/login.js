@@ -1,0 +1,967 @@
+(function() {
+    'use strict';
+
+    // API base URL - adjust based on your server setup
+    const API_BASE = window.location.origin.includes('localhost') || window.location.origin.includes('127.0.0.1')
+        ? 'http://127.0.0.1:5000'
+        : window.location.origin;
+
+    // DOM Elements
+    const loginTab = document.querySelector('[data-tab="login"]');
+    const signupTab = document.querySelector('[data-tab="signup"]');
+    const loginForm = document.getElementById('loginForm');
+    const signupForm = document.getElementById('signupForm');
+    const authMessage = document.getElementById('authMessage');
+    const accessCodeCircle = document.getElementById('accessCodeCircle');
+    const acCircleBtn = document.getElementById('acCircleBtn');
+    const acClose = document.getElementById('acClose');
+    const acCodeDisplay = document.getElementById('acCodeDisplay');
+
+    // Initialize birthdate dropdowns
+    function initBirthdateDropdowns() {
+        // Populate day dropdowns (1-31)
+        function populateDayDropdown(dropdownId, maxDays = 31) {
+            const dropdown = document.getElementById(dropdownId);
+            if (!dropdown) return;
+            dropdown.innerHTML = '';
+            for (let i = 1; i <= maxDays; i++) {
+                const item = document.createElement('button');
+                item.type = 'button';
+                item.className = 'birthdate-item';
+                item.dataset.value = i;
+                item.textContent = i;
+                dropdown.appendChild(item);
+            }
+        }
+
+        // Populate year dropdown (1900-2100)
+        function populateYearDropdown(dropdownId) {
+            const dropdown = document.getElementById(dropdownId);
+            if (!dropdown) return;
+            dropdown.innerHTML = '';
+            for (let year = 2100; year >= 1900; year--) {
+                const item = document.createElement('button');
+                item.type = 'button';
+                item.className = 'birthdate-item';
+                item.dataset.value = year;
+                item.textContent = year;
+                dropdown.appendChild(item);
+            }
+        }
+
+        // Initialize day dropdowns
+        populateDayDropdown('birthDayDropdown', 31);
+        populateDayDropdown('loginBirthDayDropdown', 31);
+
+        // Initialize year dropdowns
+        populateYearDropdown('birthYearDropdown');
+        populateYearDropdown('loginBirthYearDropdown');
+
+        // Initialize birthdate combo functionality
+        function initBirthdateCombo(inputId, toggleId, dropdownId, hiddenInputId, type = 'day') {
+            const input = document.getElementById(inputId);
+            const toggle = document.getElementById(toggleId);
+            const dropdown = document.getElementById(dropdownId);
+            const hiddenInput = document.getElementById(hiddenInputId);
+            const parent = input?.closest('.birthdate-combo');
+
+            if (!input || !toggle || !dropdown || !hiddenInput || !parent) return;
+
+            const isMobile = window.matchMedia('(max-width: 640px)').matches;
+            if (isMobile) {
+                input.setAttribute('readonly', 'readonly');
+            }
+
+            // Toggle dropdown
+            toggle.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const isOpen = parent.classList.contains('is-open');
+                closeAllCombos();
+                if (!isOpen) {
+                    parent.classList.add('is-open');
+                    toggle.setAttribute('aria-expanded', 'true');
+                    filterBirthdateDropdown(input, dropdown, type);
+                }
+            });
+
+            // Open dropdown on focus/click in the input
+            input.addEventListener('focus', () => {
+                if (!parent.classList.contains('is-open')) {
+                    parent.classList.add('is-open');
+                    toggle.setAttribute('aria-expanded', 'true');
+                }
+            });
+            input.addEventListener('click', () => {
+                if (!parent.classList.contains('is-open')) {
+                    parent.classList.add('is-open');
+                    toggle.setAttribute('aria-expanded', 'true');
+                }
+            });
+
+            // Handle input typing (kept for desktop accessibility, though readOnly prevents on mobile)
+            input.addEventListener('input', (e) => {
+                const value = e.target.value.trim();
+                if (type === 'day') {
+                    // Only allow numbers, max 2 digits, 1-31
+                    const numValue = value.replace(/[^0-9]/g, '').slice(0, 2);
+                    if (numValue && (parseInt(numValue) < 1 || parseInt(numValue) > 31)) {
+                        e.target.value = numValue.slice(0, -1);
+                        return;
+                    }
+                    input.value = numValue;
+                    hiddenInput.value = numValue || '';
+                } else if (type === 'month') {
+                    // Allow month name or number
+                    const monthMatch = matchMonth(value);
+                    if (monthMatch) {
+                        input.value = monthMatch.text;
+                        hiddenInput.value = monthMatch.value;
+                    } else {
+                        const numValue = value.replace(/[^0-9]/g, '').slice(0, 2);
+                        if (numValue && (parseInt(numValue) < 1 || parseInt(numValue) > 12)) {
+                            e.target.value = numValue.slice(0, -1);
+                            return;
+                        }
+                        input.value = numValue;
+                        hiddenInput.value = numValue || '';
+                    }
+                } else if (type === 'year') {
+                    // Only allow numbers, max 4 digits, 1900-2100
+                    const numValue = value.replace(/[^0-9]/g, '').slice(0, 4);
+                    if (numValue && (parseInt(numValue) < 1900 || parseInt(numValue) > 2100)) {
+                        e.target.value = numValue.slice(0, -1);
+                        return;
+                    }
+                    input.value = numValue;
+                    hiddenInput.value = numValue || '';
+                }
+                
+                filterBirthdateDropdown(input, dropdown, type);
+                if (value && !parent.classList.contains('is-open')) {
+                    parent.classList.add('is-open');
+                    toggle.setAttribute('aria-expanded', 'true');
+                }
+                
+                // Trigger day update if month/year changed
+                if (type === 'month' || type === 'year') {
+                    setTimeout(() => updateDaysForSelectedMonth(), 100);
+                }
+            });
+
+            // Select item
+            function attachItemHandlers() {
+                dropdown.querySelectorAll('.birthdate-item').forEach(item => {
+                    item.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const value = item.dataset.value;
+                        const text = item.dataset.text || item.textContent;
+                        hiddenInput.value = value;
+                        input.value = text;
+                        parent.classList.remove('is-open');
+                        toggle.setAttribute('aria-expanded', 'false');
+                        
+                        // Trigger day update if month/year changed
+                        if (type === 'month' || type === 'year') {
+                            setTimeout(() => updateDaysForSelectedMonth(), 100);
+                        }
+                    });
+                });
+            }
+
+            attachItemHandlers();
+            
+            // Re-attach handlers when dropdown content changes (for day dropdowns)
+            if (type === 'day') {
+                const observer = new MutationObserver(() => {
+                    attachItemHandlers();
+                });
+                observer.observe(dropdown, { childList: true });
+            }
+        }
+
+        function matchMonth(value) {
+            const months = [
+                { value: '1', text: 'January', abbr: 'jan' },
+                { value: '2', text: 'February', abbr: 'feb' },
+                { value: '3', text: 'March', abbr: 'mar' },
+                { value: '4', text: 'April', abbr: 'apr' },
+                { value: '5', text: 'May', abbr: 'may' },
+                { value: '6', text: 'June', abbr: 'jun' },
+                { value: '7', text: 'July', abbr: 'jul' },
+                { value: '8', text: 'August', abbr: 'aug' },
+                { value: '9', text: 'September', abbr: 'sep' },
+                { value: '10', text: 'October', abbr: 'oct' },
+                { value: '11', text: 'November', abbr: 'nov' },
+                { value: '12', text: 'December', abbr: 'dec' }
+            ];
+            const lowerValue = value.toLowerCase().trim();
+            return months.find(m => 
+                m.text.toLowerCase().startsWith(lowerValue) || 
+                m.abbr === lowerValue ||
+                m.value === lowerValue
+            );
+        }
+
+        function filterBirthdateDropdown(input, dropdown, type) {
+            const searchTerm = input.value.toLowerCase().trim();
+            const items = dropdown.querySelectorAll('.birthdate-item');
+            let hasVisible = false;
+            
+            items.forEach(item => {
+                const text = (item.dataset.text || item.textContent).toLowerCase();
+                const value = item.dataset.value.toLowerCase();
+                const matches = !searchTerm || text.includes(searchTerm) || text.startsWith(searchTerm) || value === searchTerm;
+                item.style.display = matches ? 'flex' : 'none';
+                if (matches) hasVisible = true;
+            });
+            
+            // Show "No results" if no matches
+            let noResults = dropdown.querySelector('.no-results');
+            if (!hasVisible && searchTerm) {
+                if (!noResults) {
+                    noResults = document.createElement('div');
+                    noResults.className = 'no-results';
+                    noResults.textContent = 'No results found';
+                    noResults.style.padding = '10px 16px';
+                    noResults.style.color = 'var(--muted)';
+                    noResults.style.fontSize = '14px';
+                    dropdown.appendChild(noResults);
+                }
+            } else if (noResults) {
+                noResults.remove();
+            }
+        }
+
+        // Initialize all birthdate combos
+        initBirthdateCombo('birthDayInput', 'birthDayToggle', 'birthDayDropdown', 'birthDay', 'day');
+        initBirthdateCombo('birthMonthInput', 'birthMonthToggle', 'birthMonthDropdown', 'birthMonth', 'month');
+        initBirthdateCombo('birthYearInput', 'birthYearToggle', 'birthYearDropdown', 'birthYear', 'year');
+        
+        initBirthdateCombo('loginBirthDayInput', 'loginBirthDayToggle', 'loginBirthDayDropdown', 'loginBirthDay', 'day');
+        initBirthdateCombo('loginBirthMonthInput', 'loginBirthMonthToggle', 'loginBirthMonthDropdown', 'loginBirthMonth', 'month');
+        initBirthdateCombo('loginBirthYearInput', 'loginBirthYearToggle', 'loginBirthYearDropdown', 'loginBirthYear', 'year');
+    }
+
+    function updateDaysForSelectedMonth() {
+        // Update signup day dropdown
+        const birthMonthInput = document.getElementById('birthMonth');
+        const birthYearInput = document.getElementById('birthYear');
+        const birthDayDropdown = document.getElementById('birthDayDropdown');
+        const birthDayValue = document.getElementById('birthDayValue');
+        const birthDayInput = document.getElementById('birthDay');
+
+        if (birthMonthInput && birthYearInput && birthDayDropdown) {
+            const month = parseInt(birthMonthInput.value);
+            const year = parseInt(birthYearInput.value);
+            if (month && year) {
+                const daysInMonth = new Date(year, month, 0).getDate();
+                const currentDay = parseInt(birthDayInput?.value || 0);
+                
+                birthDayDropdown.innerHTML = '';
+                for (let i = 1; i <= daysInMonth; i++) {
+                    const item = document.createElement('button');
+                    item.type = 'button';
+                    item.className = 'birthdate-item';
+                    item.dataset.value = i;
+                    item.textContent = i;
+                    birthDayDropdown.appendChild(item);
+                    
+                    // Attach click handler
+                    item.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const value = item.dataset.value;
+                        if (birthDayInput) birthDayInput.value = value;
+                        if (birthDayValue) birthDayValue.textContent = i;
+                        const parentEl = item.closest('.birthdate-dropdown-parent');
+                        if (parentEl) {
+                            parentEl.classList.remove('is-open');
+                            const toggle = parentEl.querySelector('.birthdate-toggle');
+                            if (toggle) toggle.setAttribute('aria-expanded', 'false');
+                        }
+                    });
+                }
+                
+                // Reset if current day is invalid
+                if (currentDay > daysInMonth && birthDayInput && birthDayValue) {
+                    birthDayInput.value = '';
+                    birthDayValue.textContent = 'Day';
+                }
+            }
+        }
+
+        // Update login day dropdown
+        const loginBirthMonthInput = document.getElementById('loginBirthMonth');
+        const loginBirthYearInput = document.getElementById('loginBirthYear');
+        const loginBirthDayDropdown = document.getElementById('loginBirthDayDropdown');
+        const loginBirthDayValue = document.getElementById('loginBirthDayValue');
+        const loginBirthDayInput = document.getElementById('loginBirthDay');
+
+        if (loginBirthMonthInput && loginBirthYearInput && loginBirthDayDropdown) {
+            const month = parseInt(loginBirthMonthInput.value);
+            const year = parseInt(loginBirthYearInput.value);
+            if (month && year) {
+                const daysInMonth = new Date(year, month, 0).getDate();
+                const currentDay = parseInt(loginBirthDayInput?.value || 0);
+                
+                loginBirthDayDropdown.innerHTML = '';
+                for (let i = 1; i <= daysInMonth; i++) {
+                    const item = document.createElement('button');
+                    item.type = 'button';
+                    item.className = 'birthdate-item';
+                    item.dataset.value = i;
+                    item.textContent = i;
+                    loginBirthDayDropdown.appendChild(item);
+                    
+                    // Attach click handler
+                    item.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const value = item.dataset.value;
+                        if (loginBirthDayInput) loginBirthDayInput.value = value;
+                        if (loginBirthDayValue) loginBirthDayValue.textContent = i;
+                        const parentEl = item.closest('.birthdate-dropdown-parent');
+                        if (parentEl) {
+                            parentEl.classList.remove('is-open');
+                            const toggle = parentEl.querySelector('.birthdate-toggle');
+                            if (toggle) toggle.setAttribute('aria-expanded', 'false');
+                        }
+                    });
+                }
+                
+                // Reset if current day is invalid
+                if (currentDay > daysInMonth && loginBirthDayInput && loginBirthDayValue) {
+                    loginBirthDayInput.value = '';
+                    loginBirthDayValue.textContent = 'Day';
+                }
+            }
+        }
+    }
+
+
+    // Initialize birthdate dropdowns on load
+    initBirthdateDropdowns();
+
+    // Respect #signup or #login in URL to preselect tab
+    (function selectTabFromHash() {
+        const hash = (window.location.hash || '').toLowerCase();
+        if (hash === '#signup') {
+            switchTab('signup');
+        } else if (hash === '#login') {
+            switchTab('login');
+        }
+    })();
+
+    // Tab switching
+    function switchTab(tab) {
+        // Update tab buttons
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        if (tab === 'login') {
+            loginTab.classList.add('active');
+            loginForm.classList.add('active');
+            signupForm.classList.remove('active');
+        } else {
+            signupTab.classList.add('active');
+            signupForm.classList.add('active');
+            loginForm.classList.remove('active');
+        }
+        // Clear messages and errors
+        clearMessage();
+        clearErrors();
+    }
+
+    if (loginTab) {
+        loginTab.addEventListener('click', () => switchTab('login'));
+    }
+    if (signupTab) {
+        signupTab.addEventListener('click', () => switchTab('signup'));
+    }
+
+
+    // Show error message
+    function showError(inputId, message) {
+        const errorEl = document.querySelector(`[data-error="${inputId}"]`);
+        if (errorEl) {
+            errorEl.textContent = message;
+            errorEl.classList.add('show');
+        }
+        
+        const input = document.getElementById(inputId);
+        if (input) {
+            input.style.borderColor = 'var(--error)';
+        }
+    }
+
+    // Clear error
+    function clearError(inputId) {
+        const errorEl = document.querySelector(`[data-error="${inputId}"]`);
+        if (errorEl) {
+            errorEl.textContent = '';
+            errorEl.classList.remove('show');
+        }
+        
+        const input = document.getElementById(inputId);
+        if (input) {
+            input.style.borderColor = '';
+        }
+    }
+
+    // Clear all errors
+    function clearErrors() {
+        document.querySelectorAll('.form-error').forEach(el => {
+            el.textContent = '';
+            el.classList.remove('show');
+        });
+        document.querySelectorAll('.form-input, .form-select').forEach(el => {
+            el.style.borderColor = '';
+        });
+    }
+
+    // Show message
+    function showMessage(text, type = 'error') {
+        authMessage.textContent = text;
+        authMessage.className = `auth-message ${type} show`;
+        setTimeout(() => {
+            authMessage.classList.remove('show');
+        }, 5000);
+    }
+
+    // Clear message
+    function clearMessage() {
+        authMessage.textContent = '';
+        authMessage.classList.remove('show', 'success', 'error');
+    }
+
+    // Set loading state
+    function setLoading(button, loading) {
+        if (loading) {
+            button.classList.add('loading');
+            button.disabled = true;
+        } else {
+            button.classList.remove('loading');
+            button.disabled = false;
+        }
+    }
+
+    // Login form handler
+    if (loginForm) {
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            clearErrors();
+            clearMessage();
+
+            const firstname = document.getElementById('loginFirstname').value.trim();
+            const lastname = document.getElementById('loginLastname').value.trim();
+            const phone = document.getElementById('loginPhone').value.replace(/\D/g, '').trim();
+            const countryCode = document.getElementById('loginCountryCode').value;
+            const accessCode = document.getElementById('loginAccessCode').value.trim().toUpperCase();
+            const day = parseInt(document.getElementById('loginBirthDay').value) || parseInt(document.getElementById('loginBirthDayInput')?.value);
+            const month = parseInt(document.getElementById('loginBirthMonth').value) || parseInt(document.getElementById('loginBirthMonthInput')?.value);
+            const year = parseInt(document.getElementById('loginBirthYear').value) || parseInt(document.getElementById('loginBirthYearInput')?.value);
+            const submitBtn = document.getElementById('loginSubmit');
+
+            // Validate required fields
+            let hasError = false;
+            if (!firstname) {
+                showError('loginFirstname', 'First name is required');
+                hasError = true;
+            }
+            if (!lastname) {
+                showError('loginLastname', 'Last name is required');
+                hasError = true;
+            }
+            if (!phone) {
+                showError('loginPhone', 'Phone number is required');
+                hasError = true;
+            }
+            if (!accessCode || accessCode.length !== 6) {
+                showError('loginAccessCode', 'Access code is required (6 characters: 4 letters + 2 numbers)');
+                hasError = true;
+            }
+            if (!day || !month || !year) {
+                showError('loginBirthdate', 'Please select your birthdate');
+                hasError = true;
+            }
+
+            if (hasError) {
+                return;
+            }
+
+            setLoading(submitBtn, true);
+
+            try {
+                const response = await fetch(`${API_BASE}/api/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        firstname,
+                        lastname,
+                        phone,
+                        country_code: countryCode,
+                        access_code: accessCode,
+                        day,
+                        month,
+                        year
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    showMessage(data.message || 'Login successful! Redirecting...', 'success');
+                    // Store user data in localStorage for frontend access
+                    if (data.user) {
+                        localStorage.setItem('user', JSON.stringify(data.user));
+                        // Show access code circle if user has access code
+                        if (data.user.access_code) {
+                            showAccessCode(data.user.access_code);
+                        }
+                    }
+                    // Redirect to Vote page after short delay
+                    setTimeout(() => {
+                        window.location.href = '../Vote/index.html';
+                    }, 1500);
+                } else {
+                    if (data.message && data.message.includes('Name doesn\'t match')) {
+                        showError('loginFirstname', data.message);
+                    } else if (data.message && data.message.includes('Sign up for an account')) {
+                        showError('loginPhone', data.message);
+                        showMessage(data.message, 'error');
+                    } else if (data.message && data.message.includes('Access code')) {
+                        showError('loginAccessCode', data.message);
+                    } else {
+                        showError('loginPhone', data.message || 'Login failed. Please try again.');
+                    }
+                    showMessage(data.message || 'Login failed. Please try again.', 'error');
+                }
+            } catch (error) {
+                console.error('Login error:', error);
+                showError('loginPhone', 'Network error. Please check your connection.');
+                showMessage('Network error. Please check your connection.', 'error');
+            } finally {
+                setLoading(submitBtn, false);
+            }
+        });
+    }
+
+    // Signup form handler
+    if (signupForm) {
+        signupForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            clearErrors();
+            clearMessage();
+
+            const firstname = document.getElementById('signupFirstname').value.trim();
+            const lastname = document.getElementById('signupLastname').value.trim();
+            const phone = document.getElementById('signupPhone').value.replace(/\D/g, '').trim();
+            const countryCode = document.getElementById('signupCountryCode').value;
+            const email = document.getElementById('signupEmail').value.trim();
+            const day = parseInt(document.getElementById('birthDay').value) || parseInt(document.getElementById('birthDayInput')?.value);
+            const month = parseInt(document.getElementById('birthMonth').value) || parseInt(document.getElementById('birthMonthInput')?.value);
+            const year = parseInt(document.getElementById('birthYear').value) || parseInt(document.getElementById('birthYearInput')?.value);
+            const submitBtn = document.getElementById('signupSubmit');
+
+            // Validate required fields
+            let hasError = false;
+            if (!firstname) {
+                showError('signupFirstname', 'First name is required');
+                hasError = true;
+            }
+            if (!lastname) {
+                showError('signupLastname', 'Last name is required');
+                hasError = true;
+            }
+            if (!phone) {
+                showError('signupPhone', 'Phone number is required');
+                hasError = true;
+            }
+            if (!day || !month || !year) {
+                showError('birthdate', 'Please select your birthdate');
+                hasError = true;
+            }
+
+            if (hasError) {
+                return;
+            }
+
+            // Validate email if provided
+            if (email && !email.includes('@')) {
+                showError('signupEmail', 'Please enter a valid email address');
+                return;
+            }
+
+            setLoading(submitBtn, true);
+
+            try {
+                // First verify birthdate
+                const verifyResponse = await fetch(`${API_BASE}/api/verify-birthdate`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify({ day, month, year })
+                });
+
+                const verifyData = await verifyResponse.json();
+
+                if (!verifyResponse.ok || !verifyData.allowed) {
+                    showError('birthdate', verifyData.message || 'Sorry You Can\'t Sign Up On This Platform');
+                    showMessage(verifyData.message || 'Sorry You Can\'t Sign Up On This Platform', 'error');
+                    setLoading(submitBtn, false);
+                    return;
+                }
+
+                // If birthdate is valid, proceed with signup
+                const response = await fetch(`${API_BASE}/api/signup`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        firstname,
+                        lastname,
+                        phone,
+                        country_code: countryCode,
+                        email: email || null,
+                        day,
+                        month,
+                        year
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    showMessage(data.message || 'Account created successfully! Redirecting...', 'success');
+                    // Store user data in localStorage
+                    if (data.user) {
+                        localStorage.setItem('user', JSON.stringify(data.user));
+                        // Show access code circle
+                        if (data.user.access_code) {
+                            showAccessCode(data.user.access_code);
+                        }
+                    }
+                    // Redirect to Vote page after short delay
+                    setTimeout(() => {
+                        window.location.href = '../Vote/index.html';
+                    }, 3000); // Give time to see access code
+                } else {
+                    if (data.message && data.message.includes("Can't Sign Up")) {
+                        showError('birthdate', data.message);
+                    } else if (data.message && data.message.includes('phone')) {
+                        showError('signupPhone', data.message);
+                    } else if (data.message && data.message.includes('email')) {
+                        showError('signupEmail', data.message);
+                    } else {
+                        showError('signupFirstname', data.message || 'Signup failed. Please try again.');
+                    }
+                    showMessage(data.message || 'Signup failed. Please try again.', 'error');
+                }
+            } catch (error) {
+                console.error('Signup error:', error);
+                showError('signupFirstname', 'Network error. Please check your connection.');
+                showMessage('Network error. Please check your connection.', 'error');
+            } finally {
+                setLoading(submitBtn, false);
+            }
+        });
+    }
+
+    // Check if user is already logged in
+    async function checkSession() {
+        try {
+            const response = await fetch(`${API_BASE}/api/check-session`, {
+                method: 'GET',
+                credentials: 'include'
+            });
+
+            const data = await response.json();
+
+            if (data.logged_in && data.user) {
+                // User is logged in, redirect to Vote page
+                localStorage.setItem('user', JSON.stringify(data.user));
+                window.location.href = '../Vote/index.html';
+            }
+        } catch (error) {
+            console.error('Session check error:', error);
+            // Continue with login/signup if check fails
+        }
+    }
+
+    // Check session on page load
+    checkSession();
+
+    // Initialize country code combo boxes
+    function initCountryCodeCombo(inputId, toggleId, dropdownId, hiddenInputId) {
+        const input = document.getElementById(inputId);
+        const toggle = document.getElementById(toggleId);
+        const dropdown = document.getElementById(dropdownId);
+        const hiddenInput = document.getElementById(hiddenInputId);
+        const parent = input?.closest('.country-code-combo');
+
+        if (!input || !toggle || !dropdown || !hiddenInput || !parent) return;
+
+        // Toggle dropdown
+        toggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const isOpen = parent.classList.contains('is-open');
+            closeAllCombos();
+            if (!isOpen) {
+                parent.classList.add('is-open');
+                toggle.setAttribute('aria-expanded', 'true');
+                filterDropdown(input, dropdown);
+            }
+        });
+
+        // Filter dropdown on input
+        input.addEventListener('input', (e) => {
+            const value = e.target.value.trim();
+            hiddenInput.value = value;
+            filterDropdown(input, dropdown);
+            if (value && !parent.classList.contains('is-open')) {
+                parent.classList.add('is-open');
+                toggle.setAttribute('aria-expanded', 'true');
+            }
+        });
+
+        // Select country code
+        dropdown.querySelectorAll('.country-code-item').forEach(item => {
+            item.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const value = item.dataset.value;
+                input.value = value;
+                hiddenInput.value = value;
+                parent.classList.remove('is-open');
+                toggle.setAttribute('aria-expanded', 'false');
+            });
+        });
+    }
+
+    function filterDropdown(input, dropdown) {
+        const searchTerm = input.value.toLowerCase().trim();
+        const items = dropdown.querySelectorAll('.country-code-item');
+        let hasVisible = false;
+        
+        items.forEach(item => {
+            const text = item.textContent.toLowerCase();
+            const value = item.dataset.value.toLowerCase();
+            const matches = !searchTerm || text.includes(searchTerm) || value.includes(searchTerm);
+            item.style.display = matches ? 'flex' : 'none';
+            if (matches) hasVisible = true;
+        });
+        
+        // Show "No results" if no matches
+        let noResults = dropdown.querySelector('.no-results');
+        if (!hasVisible && searchTerm) {
+            if (!noResults) {
+                noResults = document.createElement('div');
+                noResults.className = 'no-results';
+                noResults.textContent = 'No results found';
+                noResults.style.padding = '10px 16px';
+                noResults.style.color = 'var(--muted)';
+                noResults.style.fontSize = '14px';
+                dropdown.appendChild(noResults);
+            }
+        } else if (noResults) {
+            noResults.remove();
+        }
+    }
+
+    function closeAllCombos() {
+        document.querySelectorAll('.country-code-combo, .birthdate-combo').forEach(parent => {
+            parent.classList.remove('is-open');
+            const toggle = parent.querySelector('.combo-dropdown-btn');
+            if (toggle) toggle.setAttribute('aria-expanded', 'false');
+        });
+    }
+
+    // Close combos when clicking outside
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.country-code-combo') && !e.target.closest('.birthdate-combo')) {
+            closeAllCombos();
+        }
+    });
+
+    // Phone formatting rules per country code
+    const COUNTRY_PHONE_RULES = {
+        '+234': { max: 10, groups: [3,3,4] },   // Nigeria now 10 digits (e.g. 7026499743)
+        '+1':   { max: 10, groups: [3,3,4] },   // US/Canada
+        '+44':  { max: 10, groups: [3,3,4] },
+        '+233': { max: 9,  groups: [3,3,3] },
+        '+254': { max: 9,  groups: [3,3,3] },
+        '+27':  { max: 9,  groups: [3,3,3] },
+        '+91':  { max: 10, groups: [3,3,4] },
+        '+86':  { max: 11, groups: [3,4,4] },
+        '+81':  { max: 10, groups: [3,3,4] },
+        '+49':  { max: 11, groups: [3,4,4] },
+        '+33':  { max: 9,  groups: [3,3,3] },
+        '+39':  { max: 10, groups: [3,3,4] },
+        '+61':  { max: 9,  groups: [3,3,3] },
+        '+55':  { max: 11, groups: [3,4,4] },
+        '+52':  { max: 10, groups: [3,3,4] },
+    };
+
+    function formatPhone(countryCode, digits) {
+        const rule = COUNTRY_PHONE_RULES[countryCode] || { max: 10, groups: [3,3,4] };
+        const trimmed = digits.slice(0, rule.max);
+        const parts = [];
+        let idx = 0;
+        for (let i = 0; i < rule.groups.length && idx < trimmed.length; i++) {
+            const len = rule.groups[i];
+            parts.push(trimmed.substring(idx, idx + len));
+            idx += len;
+        }
+        if (parts.length === 0) return '';
+        if (parts.length === 1) return `(${parts[0]}`;
+        if (parts.length === 2) return `(${parts[0]}) ${parts[1]}`;
+        return `(${parts[0]}) ${parts[1]}-${parts[2]}`;
+    }
+
+    function attachPhoneMask(inputId, countryHiddenId) {
+        const input = document.getElementById(inputId);
+        const countryHidden = document.getElementById(countryHiddenId);
+        if (!input || !countryHidden) return;
+        const update = () => {
+            const countryCode = countryHidden.value || '+234';
+            const digitsOnly = input.value.replace(/\D/g, '');
+            input.value = formatPhone(countryCode, digitsOnly);
+            // Update placeholder with randomized inactive sample
+            input.placeholder = randomSampleForCountry(countryCode);
+        };
+        input.addEventListener('input', update);
+
+        // Prevent typing more digits than the country's max
+        input.addEventListener('keydown', (e) => {
+            const allowedKeys = ['Backspace','Delete','ArrowLeft','ArrowRight','Tab','Home','End'];
+            if (allowedKeys.includes(e.key) || (e.ctrlKey || e.metaKey)) return;
+            const isDigit = /\d/.test(e.key);
+            if (!isDigit) return; // non digit filtered later by masking
+            const countryCode = countryHidden.value || '+234';
+            const rule = COUNTRY_PHONE_RULES[countryCode] || { max: 10 };
+            const currentDigits = input.value.replace(/\D/g, '');
+            if (currentDigits.length >= rule.max) {
+                e.preventDefault();
+            }
+        });
+        update();
+    }
+
+    // Initialize country code combos
+    initCountryCodeCombo('loginCountryCodeInput', 'loginCountryCodeToggle', 'loginCountryCodeDropdown', 'loginCountryCode');
+    initCountryCodeCombo('signupCountryCodeInput', 'signupCountryCodeToggle', 'signupCountryCodeDropdown', 'signupCountryCode');
+
+    // Attach phone masks
+    attachPhoneMask('loginPhone', 'loginCountryCode');
+    attachPhoneMask('signupPhone', 'signupCountryCode');
+
+    // When country code changes via dropdown, reformat phone immediately
+    function onCountryChanged(hiddenId, inputId) {
+        const hidden = document.getElementById(hiddenId);
+        const input = document.getElementById(inputId);
+        if (!hidden || !input) return;
+        const digits = input.value.replace(/\D/g, '');
+        input.value = formatPhone(hidden.value, digits);
+        input.placeholder = randomSampleForCountry(hidden.value);
+    }
+    function randomSampleForCountry(countryCode) {
+        const rule = COUNTRY_PHONE_RULES[countryCode] || { max: 10, groups: [3,3,4] };
+        // generate random digits with plausible starting patterns per country
+        let digits = '';
+        const starts = {
+            '+234': ['702','703','704','705','706','707','708','809','813','814','816','903','906'],
+            '+1':   ['201','415','617','718','801','917','305'],
+            '+44':  ['020','016','012','013','014'],
+        };
+        const start = (starts[countryCode] || ['555'])[Math.floor(Math.random() * (starts[countryCode]?.length || 1))];
+        digits += start;
+        while (digits.length < rule.max) {
+            digits += Math.floor(Math.random() * 10).toString();
+        }
+        digits = digits.slice(0, rule.max);
+        return formatPhone(countryCode, digits);
+    }
+
+    // Access Code Circle Functionality
+    if (acCircleBtn) {
+        acCircleBtn.addEventListener('click', () => {
+            const circle = document.getElementById('accessCodeCircle');
+            circle?.classList.toggle('show-popup');
+        });
+    }
+
+    if (acClose) {
+        acClose.addEventListener('click', () => {
+            const circle = document.getElementById('accessCodeCircle');
+            circle?.classList.remove('show-popup');
+        });
+    }
+
+    // Close popup when clicking outside
+    if (accessCodeCircle) {
+        document.addEventListener('click', (e) => {
+            if (!accessCodeCircle.contains(e.target) && accessCodeCircle.classList.contains('show-popup')) {
+                accessCodeCircle.classList.remove('show-popup');
+            }
+        });
+    }
+
+    // Show access code after successful signup
+    function showAccessCode(code) {
+        if (accessCodeCircle && acCodeDisplay) {
+            acCodeDisplay.textContent = code;
+            accessCodeCircle.style.display = 'block';
+            // Auto-show popup once
+            setTimeout(() => {
+                accessCodeCircle.classList.add('show-popup');
+            }, 500);
+        }
+        // Store in localStorage
+        if (code) {
+            localStorage.setItem('user_access_code', code);
+        }
+    }
+
+    // Check if user has access code in localStorage
+    const storedAccessCode = localStorage.getItem('user_access_code');
+    if (storedAccessCode && accessCodeCircle && acCodeDisplay) {
+        acCodeDisplay.textContent = storedAccessCode;
+        accessCodeCircle.style.display = 'block';
+    }
+
+    // Access code input - auto uppercase and limit to 6 characters (4 letters + 2 numbers)
+    const loginAccessCodeInput = document.getElementById('loginAccessCode');
+    if (loginAccessCodeInput) {
+        loginAccessCodeInput.addEventListener('input', (e) => {
+            let value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+            // Limit to 6 characters
+            if (value.length > 6) value = value.substring(0, 6);
+            e.target.value = value;
+            clearError('loginAccessCode');
+        });
+    }
+
+    // Real-time validation
+    document.querySelectorAll('.form-input, .form-select').forEach(input => {
+        const inputId = input.id;
+        input.addEventListener('blur', () => {
+            if (inputId && input.required && !input.value.trim()) {
+                showError(inputId, 'This field is required');
+            } else {
+                clearError(inputId);
+            }
+        });
+
+        input.addEventListener('input', () => {
+            if (input.style.borderColor === 'var(--error)') {
+                clearError(inputId);
+            }
+        });
+    });
+
+})();
+
