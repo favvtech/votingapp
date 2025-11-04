@@ -233,7 +233,7 @@ body {
 .vote-btn { width: 100%; padding: 10px 16px; background: var(--gold); color: #1f1f1f; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; transition: background-color 200ms ease, transform 150ms ease; font-size: 14px; }
 .vote-btn:hover { background: var(--gold-600); transform: scale(1.02); }
 .vote-btn:active { transform: scale(0.98); }
-.vote-btn.voted { background: var(--muted); cursor: not-allowed; }
+.vote-btn.voted { background: #9ca3af; color: #fff; cursor: default; }
 
 /* Footer - shared styles */
 .site-footer { background: #fff; border-top: 1px solid var(--border); padding: 28px 0; margin-top: 36px; }

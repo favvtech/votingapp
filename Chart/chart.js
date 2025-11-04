@@ -1,34 +1,23 @@
 (() => {
-  const categories = [
-    "PEACEMAKER AWARDS",
-    "YSA OF THE YEAR (MALE)",
-    "YSA OF THE YEAR (FEMALE)",
-    "ENTREPRENEUR OF THE YEAR",
-    "MUSICAL VOICE AWARDS",
-    "BEST DRESSED MALE",
-    "BEST DRESSED FEMALE",
-    "YSA PARTICIPATION AWARD",
-    "MOST CHRISTLIKE AWARD",
-    "LEADERSHIP APPRECIATION AWARD"
-  ];
+  const API_BASE = (window.location.origin.includes('localhost') || window.location.origin.includes('127.0.0.1'))
+    ? 'http://127.0.0.1:5000'
+    : window.location.origin;
+  const categories = (window.CATEGORIES || []).map(c => c.title);
 
   // Mock nominees per category; when unknown, generate placeholders
-  const nomineesByCategory = {
-    0: ["Momoh Precious","Victor Nweze","Nasir Samuel","Ogbor Emmanuel","Nnamdi Thomas","Tunmise","Ayep Vanessa","Richard Gbadamosi"],
-    1: ["Momoh Precious","Suleiman Abraham","Harrison Eyiki","Abel Abraham","Suleiman Ibrahim","Fabolude"],
-    2: ["Adenekan Kehinde","Adedamola Bukola","Ajisafe Ochigbo","Precious Duthen","Funmilayo Thomas","Tunmise","Bukola Ajisafe","Victory Igein"],
-    3: ["Abraham Suleiman","Harrison Eyiki","Balogun Oluwatosin","Favour Odey","Blessing Obaji","Ruth Mbonu"],
-    4: ["Bukola Ajisafe","Adeniran Hallelujah","Eniola Ayinde","Ijeoma Nwabueze","Blessings Obaji","Ruth Mbonu"],
-    5: ["Zion Ita","Udong Abasi","Harrison Eyiki","Peter Prosperity","Sunday Samuel","Nasir"],
-    6: ["Veronica Akinwande","Thomas Precious","Titi","Thomas Tunmise","Adebimpe Gbadebo","Justina Samuel"],
-    7: ["Joy Ford","Adaku","Harrison Eyiki","Joseph Abiodun","Wasiu","Thomas Tunmise","Bamidele Michael","Emmanuel Nasir"],
-    8: ["Ememekwe Emmanuel","Chidera Eric","Iorfa Maurice","Ibrahim Fabolude","Love Ayjnde","Feyisola","Thomas Tunmise","Confidence Felix","Samuel Nasir"],
-    9: ["Olubisi O.","Olamilekan","Elisha Okon","Maurice","Abraham Suleiman","Adeosun O.","King Abel","Oreoluwa Adebiyi","Samuel Nasir"]
-  };
+  const nomineesByCategory = (window.CATEGORIES || []).reduce((acc, c, idx)=>{
+    acc[idx] = c.nominees.slice();
+    return acc;
+  }, {});
 
   // Vote data will be fetched from backend
   // Structure: { categoryIndex: { "nomineeName": voteCount, ... }, ... }
   let voteData = {};
+  // Scaling and animation state
+  const STEP = 10; // Y-axis grows in steps of 10
+  const MIN_MAX = 50; // baseline max
+  let currentMax = MIN_MAX; // dynamic Y-axis max
+  const firstRenderDone = {}; // per-category first render flag
   
   // Function to update vote data from backend
   // Call this function with new vote data to refresh the chart
@@ -37,11 +26,45 @@
     // Re-render current chart with new data
     const sel = document.getElementById('category');
     const currentIndex = sel ? Number(sel.value || 0) : 0;
-    render(currentIndex, { animateReplay: true });
+    render(currentIndex, { animateReplay: false });
   }
   
   // Expose updateVoteData globally for backend integration
   window.updateVoteData = updateVoteData;
+
+  async function fetchCategoryResults(categoryIndex){
+    const categoryId = Number(categoryIndex) + 1; // backend uses 1-based ids
+    try {
+      const resp = await fetch(`${API_BASE}/api/categories/${categoryId}/results`, { credentials: 'include' });
+      if (!resp.ok) return;
+      const data = await resp.json();
+      // Build mapping name -> votes for this category
+      const names = nomineesByCategory[categoryIndex] || [];
+      const counts = Object.create(null);
+      names.forEach(n => counts[n] = 0);
+      (data.results || []).forEach(r => {
+        const idx = Number(r.nominee_id);
+        const name = names[idx];
+        if (name) counts[name] = Number(r.votes) || 0;
+      });
+      // Update Y-axis scaling only when a vote exceeds currentMax
+      const localMax = Math.max(0, ...Object.values(counts));
+      if (localMax > currentMax) {
+        currentMax = Math.max(MIN_MAX, Math.ceil(localMax / STEP) * STEP);
+      }
+      const merged = {};
+      merged[categoryIndex] = counts;
+      updateVoteData(Object.assign({}, voteData, merged));
+    } catch(_){ /* ignore */ }
+  }
+
+  let pollTimer = null;
+  function startPolling(categoryIndex){
+    if (pollTimer) clearInterval(pollTimer);
+    // immediate fetch
+    fetchCategoryResults(categoryIndex);
+    pollTimer = setInterval(()=> fetchCategoryResults(categoryIndex), 2000);
+  }
 
   function buildOptions(){
     const sel = document.getElementById('category');
@@ -306,16 +329,7 @@
     buildOptions.updateBSLabel = updateBSLabel; // expose to setActive
   }
 
-  function niceMax(maxVal) {
-    if (!isFinite(maxVal) || maxVal <= 0) return 1;
-    // Cap at 250 maximum
-    if (maxVal >= 250) return 250;
-    const exp = Math.floor(Math.log10(maxVal));
-    const base = Math.pow(10, exp);
-    const n = maxVal / base;
-    let m; if (n <= 1) m = 1; else if (n <= 2) m = 2; else if (n <= 5) m = 5; else m = 10;
-    return m * base;
-  }
+  function getAxisMax() { return currentMax; }
 
   function render(idx, {animateReplay=false}={}){
     const title = categories[idx] || 'Category';
@@ -345,14 +359,14 @@
     // Get vote data from backend (voteData structure)
     const categoryVotes = voteData[idx] || {};
     // Map names to votes, defaulting to 0 if no vote data exists
+    // IMPORTANT: Keep bars in original nominee order (no sorting by votes)
     const data = names.map((n) => ({
       name: n,
       value: categoryVotes[n] || 0
-    })).sort((a, b) => b.value - a.value);
+    }));
 
-    // Handle empty data (all votes are 0)
-    const maxVote = Math.max(...data.map(d=>d.value), 0);
-    const maxVal = maxVote > 0 ? niceMax(maxVote) : 250; // Default to 250 if no votes
+    // Use dynamic axis max (baseline 100, grows by 50 when exceeded)
+    const maxVal = getAxisMax();
 
     // scales
     const bandCount = data.length;
@@ -471,7 +485,17 @@
       });
       if (t < 1) requestAnimationFrame(frame);
     }
-    if (animateReplay) requestAnimationFrame(frame); else requestAnimationFrame(frame);
+    if (animateReplay) {
+      requestAnimationFrame(frame);
+    } else {
+      // Set final state without replay animation
+      rects.forEach((r)=>{
+        const by = y(r.value); const bh = innerH - by;
+        r.node.setAttribute('y', `${by}`);
+        r.node.setAttribute('height', `${bh}`);
+      });
+      labels.forEach((l)=>{ l.node.textContent = String(Math.round(l.value)); });
+    }
   }
 
   function setActive(index){
@@ -479,12 +503,17 @@
     const sel = document.getElementById('category');
     if (sel && sel.value !== String(index)) sel.value = String(index);
     if (typeof buildOptions.updateBSLabel === 'function') buildOptions.updateBSLabel(index);
-    render(index, {animateReplay:true});
+    const shouldAnimate = !firstRenderDone[index];
+    render(index, {animateReplay: shouldAnimate});
+    firstRenderDone[index] = true;
+    startPolling(index);
   }
 
   // init
   buildOptions();
   render(0, {animateReplay:true});
+  firstRenderDone[0] = true;
+  startPolling(0);
 
   // replay and theme toggle - use setTimeout to ensure DOM is ready
   setTimeout(()=>{

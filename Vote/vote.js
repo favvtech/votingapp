@@ -1,86 +1,8 @@
 (() => {
-    const categoriesData = [
-        {
-            number: 1,
-            title: "PEACEMAKER AWARDS",
-            nominees: [
-                "Momoh Precious", "Victor Nweze", "Nasir Samuel", "Ogbor Emmanuel Nnamdi",
-                "Thomas Tunmise", "Ayep Vanessa", "Richard Gbadamosi"
-            ]
-        },
-        {
-            number: 2,
-            title: "YSA OF THE YEAR (MALE)",
-            nominees: [
-                "Momoh Precious", "Suleiman Abraham", "Harrison Eyiki", "Abel",
-                "Abraham Suleiman", "Ibrahim Fabolude"
-            ]
-        },
-        {
-            number: 3,
-            title: "YSA OF THE YEAR (FEMALE)",
-            nominees: [
-                "Adenekan Kehinde Adedamola", "Bukola Ajisafe", "Ochigbo Precious",
-                "Duthen Funmilayo", "Thomas Tunmise", "Bukola Ajisafe", "Victory Igein"
-            ]
-        },
-        {
-            number: 4,
-            title: "ENTREPRENEUR OF THE YEAR",
-            nominees: [
-                "Abraham Suleiman", "Harrison Eyiki", "Balogun Oluwatosin",
-                "Favour Odey", "Blessing Obaji", "Ruth Mbonu"
-            ]
-        },
-        {
-            number: 5,
-            title: "MUSICAL VOICE AWARDS",
-            nominees: [
-                "Bukola Ajisafe", "Adeniran Hallelujah", "Eniola Ayinde",
-                "Ijeoma Nwabueze", "Blessings Obaji", "Ruth Mbonu"
-            ]
-        },
-        {
-            number: 6,
-            title: "BEST DRESSED MALE",
-            nominees: [
-                "Zion Ita Udong Abasi", "Harrison Eyiki",
-                "Peter Prosperity Sunday", "Samuel Nasir"
-            ]
-        },
-        {
-            number: 7,
-            title: "BEST DRESSED FEMALE",
-            nominees: [
-                "Veronica Akinwande", "Thomas Precious Titi", "Thomas Tunmise",
-                "Adebimpe Gbadebo", "Justina Samuel"
-            ]
-        },
-        {
-            number: 8,
-            title: "YSA PARTICIPATION AWARD",
-            nominees: [
-                "Joy Ford Adaku", "Harrison Eyiki", "Joseph Abiodun Wasiu",
-                "Thomas Tunmise", "Bamidele Michael", "Emmanuel Nasir"
-            ]
-        },
-        {
-            number: 9,
-            title: "MOST CHRISTLIKE AWARD",
-            nominees: [
-                "Ememekwe Emmanuel Chidera", "Eric Iorfa Maurice", "Ibrahim Fabolude",
-                "Love Ayinde Feyisola", "Thomas Tunmise", "Confidence Felix", "Samuel Nasir"
-            ]
-        },
-        {
-            number: 10,
-            title: "LEADERSHIP APPRECIATION AWARD",
-            nominees: [
-                "Olubisi Olasunkanmi Olamilekan", "Elisha Okon Maurice", "Abraham Suleiman",
-                "Adeosun O. King", "Abel", "Oreoluwa Adebiyi", "Samuel Nasir"
-            ]
-        }
-    ];
+    const API_BASE = (window.location.origin.includes('localhost') || window.location.origin.includes('127.0.0.1'))
+        ? 'http://127.0.0.1:5000'
+        : window.location.origin;
+    const categoriesData = (window.CATEGORIES || []).slice();
 
     function generatePlaceholderImage(name) {
         const colors = ['#c9a227', '#b38a10', '#8b6914', '#6b4f0a'];
@@ -144,11 +66,11 @@
             </div>
             <div class="category-content">
                 <div class="nominees-list">
-                    ${category.nominees.map(nominee => `
+                    ${category.nominees.map((nominee, idx) => `
                         <div class="nominee-card">
                             <img src="${generatePlaceholderImage(nominee)}" alt="${nominee}" class="nominee-image" />
                             <div class="nominee-name">${nominee}</div>
-                            <button class="vote-btn" data-nominee="${nominee}" data-category="${category.number}">
+                            <button class="vote-btn" data-nominee="${nominee}" data-nominee-index="${idx}" data-category="${category.number}">
                                 Vote
                             </button>
                         </div>
@@ -215,32 +137,84 @@
 
         // Add vote button handlers
         document.querySelectorAll('.vote-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
+            btn.addEventListener('click', async (e) => {
                 e.stopPropagation();
-                const nominee = btn.dataset.nominee;
-                const category = btn.dataset.category;
-                
+                const nomineeName = btn.dataset.nominee;
+                const categoryId = Number(btn.dataset.category);
+                const nomineeIdx = Number(btn.dataset.nomineeIndex);
+
+                // Prevent voting if already voted in this category
                 if (btn.classList.contains('voted')) return;
-                
-                btn.classList.add('voted');
-                btn.textContent = 'Voted ✓';
-                
-                // Store vote in localStorage (temporary until backend)
-                const votes = JSON.parse(localStorage.getItem('votes') || '{}');
-                if (!votes[category]) votes[category] = [];
-                votes[category].push(nominee);
-                localStorage.setItem('votes', JSON.stringify(votes));
-                
-                console.log(`Voted for ${nominee} in category ${category}`);
+                if (btn.getAttribute('data-locked') === 'true') return;
+
+                try {
+                    const resp = await fetch(`${API_BASE}/api/vote`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'include',
+                        body: JSON.stringify({ category_id: categoryId, nominee_id: nomineeIdx })
+                    });
+                    if (resp.status === 401) {
+                        // Not logged in – non-blocking notice
+                        console.warn('Please log in to vote.');
+                        return;
+                    }
+                    if (resp.status === 409) {
+                        // Already voted
+                        markCategoryVoted(categoryId);
+                        console.info('You have already voted in this category.');
+                        return;
+                    }
+                    if (!resp.ok) {
+                        console.error('Could not record your vote. Please try again.');
+                        return;
+                    }
+
+                    // Success – mark as voted in UI
+                    markCategoryVoted(categoryId, nomineeName, nomineeIdx);
+                } catch (err) {
+                    console.error(err);
+                    alert('Network error. Please try again.');
+                }
             });
         });
 
-        // Reset all votes - clear localStorage and remove voted states
-        localStorage.removeItem('votes');
-        document.querySelectorAll('.vote-btn').forEach(btn => {
-            btn.classList.remove('voted');
-            btn.textContent = 'Vote';
+        // On load, disable categories already voted by this user
+        refreshMyVotes();
+    }
+
+    function markCategoryVoted(categoryId, nomineeName, nomineeIdx){
+        document.querySelectorAll(`.vote-btn[data-category="${categoryId}"]`).forEach(b => {
+            // lock all buttons to prevent further votes without changing their visual style
+            b.setAttribute('data-locked','true');
+            b.setAttribute('aria-disabled','true');
+            // Only the chosen nominee gets the voted style/text
+            const isChosen = (nomineeName && b.dataset.nominee === nomineeName) ||
+                             (typeof nomineeIdx === 'number' && Number(b.dataset.nomineeIndex) === Number(nomineeIdx));
+            if (isChosen){
+                b.classList.add('voted');
+                b.textContent = 'Voted ✓';
+            } else {
+                b.classList.remove('voted');
+                b.textContent = 'Vote';
+            }
         });
+    }
+    async function refreshMyVotes(){
+        try {
+            const resp = await fetch(`${API_BASE}/api/my-votes`, { credentials: 'include' });
+            if (!resp.ok) return;
+            const data = await resp.json();
+            if (!data || !data.success) return;
+            (data.votes || []).forEach(v => {
+                const cid = Number(v.category_id);
+                const nid = Number(v.nominee_id);
+                // resolve nominee name via DOM dataset or through index
+                markCategoryVoted(cid, undefined, nid);
+            });
+        } catch (e) {
+            // ignore
+        }
     }
 
     // Year in footer

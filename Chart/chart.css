@@ -55,6 +55,8 @@ svg{width:100%;height:auto;display:block}
 .bar{fill:url(#barFill);opacity:.95;filter:drop-shadow(0 1px 1px rgba(0,0,0,.08))}
 .bar:hover{opacity:1;filter:drop-shadow(0 3px 6px rgba(0,0,0,.12))}
 .value-label{fill:#111827;font-size:12px;text-anchor:middle}
+[data-theme='dark'] .value-label{fill:#e5e7eb}
+@media (prefers-color-scheme: dark){:root:not([data-theme]) .value-label{fill:#e5e7eb}}
 /* subtle heading separator */
 .chart-title{display:flex;align-items:center;gap:10px}
 .chart-title::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,rgba(0,0,0,0),var(--grid),rgba(0,0,0,0));}

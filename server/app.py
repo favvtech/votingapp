@@ -54,6 +54,21 @@ def init_db():
         ON users(birthdate, fullname)
     ''')
     
+    # Votes table: one vote per user per category
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS votes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            category_id INTEGER NOT NULL,
+            nominee_id INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, category_id),
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_votes_category ON votes(category_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_votes_nominee ON votes(nominee_id)')
+    
     conn.commit()
     conn.close()
     print("Database initialized")
@@ -411,6 +426,90 @@ def create_app() -> Flask:
         """Logout user"""
         session.clear()
         return jsonify({"success": True, "message": "Logged out successfully"})
+
+    @app.post("/api/vote")
+    def cast_vote():
+        """Cast a vote for a nominee in a category; one vote per user per category"""
+        if 'user_id' not in session:
+            return jsonify({"success": False, "message": "Not authenticated"}), 401
+        data = request.get_json() or {}
+        try:
+            category_id = int(data.get('category_id'))
+            nominee_id = int(data.get('nominee_id'))
+        except (TypeError, ValueError):
+            return jsonify({"success": False, "message": "Invalid category or nominee"}), 400
+
+        if category_id <= 0 or nominee_id <= 0:
+            return jsonify({"success": False, "message": "Invalid identifiers"}), 400
+
+        conn = get_db()
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                "INSERT OR IGNORE INTO votes (user_id, category_id, nominee_id) VALUES (?, ?, ?)",
+                (session['user_id'], category_id, nominee_id)
+            )
+            if cur.rowcount == 0:
+                # User already voted in this category
+                conn.close()
+                return jsonify({"success": False, "message": "You have already voted in this category"}), 409
+            conn.commit()
+            conn.close()
+            return jsonify({"success": True, "message": "Vote recorded"}), 201
+        except Exception as e:
+            conn.close()
+            return jsonify({"success": False, "message": "Failed to record vote"}), 500
+
+    @app.get("/api/categories/<int:category_id>/results")
+    def category_results(category_id: int):
+        """Return tallies per nominee for a category"""
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT nominee_id, COUNT(*) as votes FROM votes WHERE category_id = ? GROUP BY nominee_id",
+            (category_id,)
+        )
+        rows = cur.fetchall()
+        conn.close()
+        results = [{"nominee_id": r[0], "votes": r[1]} for r in rows]
+        return jsonify({"category_id": category_id, "results": results})
+
+    @app.get("/api/my-votes")
+    def my_votes():
+        """Return categories the authenticated user has voted in"""
+        if 'user_id' not in session:
+            return jsonify({"success": False, "message": "Not authenticated"}), 401
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT category_id, nominee_id, created_at FROM votes WHERE user_id = ?",
+            (session['user_id'],)
+        )
+        rows = cur.fetchall()
+        conn.close()
+        votes = [
+            {"category_id": r[0], "nominee_id": r[1], "created_at": r[2]}
+            for r in rows
+        ]
+        return jsonify({"success": True, "votes": votes})
+
+    @app.post("/api/admin/reset-votes")
+    def reset_votes():
+        """Admin utility: reset all votes to zero by clearing the votes table"""
+        # Basic guard: require any authenticated session
+        if 'user_id' not in session:
+            return jsonify({"success": False, "message": "Not authenticated"}), 401
+        conn = get_db()
+        cur = conn.cursor()
+        try:
+            cur.execute("DELETE FROM votes")
+            affected = cur.rowcount
+            conn.commit()
+            conn.close()
+            return jsonify({"success": True, "deleted": affected})
+        except Exception:
+            conn.close()
+            return jsonify({"success": False, "message": "Failed to reset votes"}), 500
 
     return app
 
