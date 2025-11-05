@@ -144,11 +144,41 @@
     }
 
     // Initialize on page load
+    function initPasswordToggles() {
+        const eye = '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 5C7 5 2.73 8.11 1 12c1.73 3.89 6 7 11 7s9.27-3.11 11-7c-1.73-3.89-6-7-11-7Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        const eyeOff = '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 3l18 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M10.58 10.58A4 4 0 0 0 12 16a4 4 0 0 0 3.42-6.42M17.94 17.94C16.22 19.23 14.18 20 12 20 7 20 2.73 16.89 1 13c.56-1.25 1.38-2.41 2.4-3.43M6.06 6.06C7.78 4.77 9.82 4 12 4c5 0 9.27 3.11 11 7-.48 1.08-1.13 2.1-1.92 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        const toggleButtons = document.querySelectorAll('[data-pw-toggle]');
+        toggleButtons.forEach((btn) => {
+            const targetId = btn.getAttribute('aria-controls');
+            const input = targetId ? document.getElementById(targetId) : null;
+            if (!input) return;
+            // initialize icon
+            const label = btn.querySelector('[data-pw-label]');
+            if (label) label.innerHTML = eye;
+            btn.addEventListener('click', () => {
+                const isPassword = input.getAttribute('type') === 'password';
+                input.setAttribute('type', isPassword ? 'text' : 'password');
+                btn.setAttribute('aria-pressed', isPassword ? 'true' : 'false');
+                if (label) label.innerHTML = isPassword ? eyeOff : eye;
+            });
+        });
+    }
+
     async function init() {
         const user = await checkAuthStatus();
+        // If not logged in, hard-clear any stale local client state and UI
+        if (!user) {
+            try {
+                localStorage.removeItem('user');
+                localStorage.removeItem('user_access_code');
+            } catch (_) {}
+            const ac = document.getElementById('accessCodeCircle');
+            if (ac) ac.remove();
+        }
         wireProfileMenu();
         updateNavigation(!!user);
         showAccessCodeCircle();
+        initPasswordToggles();
 
         // Re-evaluate mobile-only elements on resize
         window.addEventListener('resize', () => updateNavigation(!!user));

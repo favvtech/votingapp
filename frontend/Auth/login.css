@@ -268,6 +268,33 @@ html, body {
     transition: all 0.3s ease;
     font-family: inherit;
 }
+#loginForm .input-with-toggle {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+#loginForm .input-with-toggle.is-left .form-input {
+    padding-left: 44px;
+}
+
+#loginForm .pw-toggle-btn {
+    position: absolute;
+    left: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 0;
+}
+
+#loginForm .pw-toggle-btn:hover { color: var(--text); }
+
 
 .form-input:focus,
 .form-select:focus {

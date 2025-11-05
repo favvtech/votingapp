@@ -130,15 +130,21 @@
 
                     <div class="form-group">
                         <label for="loginAccessCode" class="form-label">Access Code <span class="required">*</span></label>
-                        <input 
-                            type="text" 
-                            id="loginAccessCode" 
-                            class="form-input" 
-                            placeholder="Enter your access code"
-                            required
-                            maxlength="6"
-                            style="text-transform: uppercase; letter-spacing: 2px; font-family: monospace; font-weight: 600;"
-                        />
+                        <div class="input-with-toggle is-left">
+                            <button type="button" class="pw-toggle-btn" data-pw-toggle aria-controls="loginAccessCode" aria-pressed="false" aria-label="Show access code">
+                                <span data-pw-label></span>
+                            </button>
+                            <input 
+                                type="password" 
+                                id="loginAccessCode" 
+                                class="form-input" 
+                                placeholder="Enter your access code"
+                                required
+                                maxlength="6"
+                                style="text-transform: uppercase; letter-spacing: 2px; font-family: monospace; font-weight: 600;"
+                                autocomplete="current-password"
+                            />
+                        </div>
                         <span class="form-error" data-error="loginAccessCode"></span>
                     </div>
 
@@ -447,6 +453,7 @@
         </div>
     </div>
 
+    <script src="../shared.js"></script>
     <script src="login.js"></script>
 </body>
 </html>

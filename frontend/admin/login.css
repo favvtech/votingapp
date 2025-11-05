@@ -145,6 +145,34 @@ body {
     transition: all 0.2s;
 }
 
+/* Password toggle positioning (left icon) */
+.input-with-toggle {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.input-with-toggle.is-left .code-input {
+    padding-left: 44px;
+}
+
+.pw-toggle-btn {
+    position: absolute;
+    left: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0;
+}
+
+.pw-toggle-btn:hover { color: var(--text); }
+
 .code-input:focus {
     outline: none;
     border-color: var(--primary);

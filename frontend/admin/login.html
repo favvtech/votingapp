@@ -37,16 +37,21 @@
             <form id="adminLoginForm" class="login-form">
                 <div class="form-group">
                     <label for="accessCode">Access Code</label>
-                    <input 
-                        type="text" 
-                        id="accessCode" 
-                        name="accessCode" 
-                        placeholder="Enter access code"
-                        required
-                        autocomplete="off"
-                        maxlength="6"
-                        class="code-input"
-                    >
+                    <div class="input-with-toggle is-left">
+                        <button type="button" class="pw-toggle-btn" data-pw-toggle aria-controls="accessCode" aria-pressed="false" aria-label="Show access code">
+                            <span data-pw-label></span>
+                        </button>
+                        <input 
+                            type="password" 
+                            id="accessCode" 
+                            name="accessCode" 
+                            placeholder="Enter access code"
+                            required
+                            autocomplete="current-password"
+                            maxlength="6"
+                            class="code-input"
+                        >
+                    </div>
                 </div>
 
                 <div class="error-message" id="errorMessage"></div>
@@ -58,6 +63,7 @@
         </div>
     </div>
 
+    <script src="../shared.js"></script>
     <script src="login.js"></script>
 </body>
 </html>
