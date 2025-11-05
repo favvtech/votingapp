@@ -1,0 +1,20 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Flask Backend",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/server/app.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "FLASK_ENV": "development",
+                "FLASK_APP": "app.py"
+            },
+            "cwd": "${workspaceFolder}/server"
+        }
+    ]
+}
+
+
