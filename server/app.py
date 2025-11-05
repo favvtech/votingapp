@@ -493,12 +493,78 @@ def create_app() -> Flask:
         ]
         return jsonify({"success": True, "votes": votes})
 
+    # Admin/Analyst Access Codes
+    ADMIN_CODE = "B1E5Z0"  # 3 letters + 3 numbers (mixed)
+    ANALYST_CODE = "HANS13"  # 4 letters + 2 numbers
+
+    def require_admin():
+        """Helper to require admin authentication"""
+        if 'admin_authenticated' not in session or not session.get('admin_authenticated'):
+            return None
+        role = session.get('admin_role', 'admin')
+        if role != 'admin':
+            return None
+        return True
+
+    @app.post("/api/admin/login")
+    def admin_login():
+        """Admin login with access code"""
+        data = request.get_json()
+        access_code = data.get('access_code', '').strip().upper()
+        
+        if access_code != ADMIN_CODE:
+            return jsonify({"success": False, "message": "Invalid admin access code"}), 403
+        
+        session['admin_role'] = 'admin'
+        session['admin_authenticated'] = True
+        
+        return jsonify({
+            "success": True,
+            "message": "Admin login successful",
+            "role": "admin"
+        })
+
+    @app.post("/api/analyst/login")
+    def analyst_login():
+        """Analyst login with access code"""
+        data = request.get_json()
+        access_code = data.get('access_code', '').strip().upper()
+        
+        if access_code != ANALYST_CODE:
+            return jsonify({"success": False, "message": "Invalid analyst access code"}), 403
+        
+        session['admin_role'] = 'analyst'
+        session['admin_authenticated'] = True
+        
+        return jsonify({
+            "success": True,
+            "message": "Analyst login successful",
+            "role": "analyst"
+        })
+
+    @app.get("/api/admin/check-session")
+    def admin_check_session():
+        """Check if admin/analyst is logged in"""
+        if 'admin_authenticated' in session and session.get('admin_authenticated'):
+            role = session.get('admin_role', 'admin')
+            return jsonify({
+                "logged_in": True,
+                "role": role
+            })
+        return jsonify({"logged_in": False})
+
+    @app.post("/api/admin/logout")
+    def admin_logout():
+        """Logout admin/analyst"""
+        session.pop('admin_role', None)
+        session.pop('admin_authenticated', None)
+        return jsonify({"success": True, "message": "Logged out successfully"})
+
     @app.post("/api/admin/reset-votes")
     def reset_votes():
         """Admin utility: reset all votes to zero by clearing the votes table"""
-        # Basic guard: require any authenticated session
-        if 'user_id' not in session:
-            return jsonify({"success": False, "message": "Not authenticated"}), 401
+        if not require_admin():
+            return jsonify({"success": False, "message": "Admin access required"}), 403
         conn = get_db()
         cur = conn.cursor()
         try:
@@ -510,6 +576,368 @@ def create_app() -> Flask:
         except Exception:
             conn.close()
             return jsonify({"success": False, "message": "Failed to reset votes"}), 500
+
+    @app.get("/api/admin/users")
+    def admin_get_users():
+        """Get all users with their votes (admin only)"""
+        if not require_admin():
+            return jsonify({"success": False, "message": "Admin access required"}), 403
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Get all users
+        cursor.execute("SELECT * FROM users ORDER BY created_at DESC")
+        users = cursor.fetchall()
+        
+        # Get votes for each user
+        users_with_votes = []
+        for user in users:
+            cursor.execute(
+                "SELECT category_id, nominee_id, created_at FROM votes WHERE user_id = ?",
+                (user['id'],)
+            )
+            votes = cursor.fetchall()
+            users_with_votes.append({
+                "id": user['id'],
+                "fullname": user['fullname'],
+                "email": user['email'],
+                "phone": user['phone'],
+                "country_code": user['country_code'],
+                "access_code": user['access_code'],
+                "birthdate": user['birthdate'],
+                "created_at": user['created_at'],
+                "votes": [
+                    {
+                        "category_id": v[0],
+                        "nominee_id": v[1],
+                        "created_at": v[2]
+                    }
+                    for v in votes
+                ]
+            })
+        
+        conn.close()
+        return jsonify({"success": True, "users": users_with_votes})
+
+    @app.delete("/api/admin/users/<int:user_id>")
+    def admin_delete_user(user_id):
+        """Delete a user and all their votes (admin only)"""
+        if not require_admin():
+            return jsonify({"success": False, "message": "Admin access required"}), 403
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        try:
+            # Delete user's votes first
+            cursor.execute("DELETE FROM votes WHERE user_id = ?", (user_id,))
+            # Delete user
+            cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
+            conn.commit()
+            conn.close()
+            return jsonify({"success": True, "message": "User deleted successfully"})
+        except Exception as e:
+            conn.close()
+            print(f"Error deleting user: {e}")
+            return jsonify({"success": False, "message": "Failed to delete user"}), 500
+
+    @app.post("/api/admin/users/<int:user_id>/reset-votes")
+    def admin_reset_user_votes(user_id):
+        """Reset votes for a specific user (admin only)"""
+        if not require_admin():
+            return jsonify({"success": False, "message": "Admin access required"}), 403
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute("DELETE FROM votes WHERE user_id = ?", (user_id,))
+            affected = cursor.rowcount
+            conn.commit()
+            conn.close()
+            return jsonify({"success": True, "deleted": affected, "message": "User votes reset successfully"})
+        except Exception as e:
+            conn.close()
+            print(f"Error resetting user votes: {e}")
+            return jsonify({"success": False, "message": "Failed to reset user votes"}), 500
+
+    @app.post("/api/admin/reset-user-votes-by-code")
+    def admin_reset_user_votes_by_code():
+        """Reset votes for a user by access code (admin only)"""
+        if not require_admin():
+            return jsonify({"success": False, "message": "Admin access required"}), 403
+        
+        data = request.get_json()
+        access_code = data.get('access_code', '').strip().upper()
+        
+        if not access_code:
+            return jsonify({"success": False, "message": "Access code is required"}), 400
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        try:
+            # Find user by access code
+            cursor.execute("SELECT id FROM users WHERE access_code = ?", (access_code,))
+            user = cursor.fetchone()
+            
+            if not user:
+                conn.close()
+                return jsonify({"success": False, "message": "User not found with this access code"}), 404
+            
+            user_id = user['id']
+            cursor.execute("DELETE FROM votes WHERE user_id = ?", (user_id,))
+            affected = cursor.rowcount
+            conn.commit()
+            conn.close()
+            return jsonify({"success": True, "deleted": affected, "message": "User votes reset successfully"})
+        except Exception as e:
+            conn.close()
+            print(f"Error resetting user votes by code: {e}")
+            return jsonify({"success": False, "message": "Failed to reset user votes"}), 500
+
+    @app.post("/api/admin/reset-category-votes")
+    def admin_reset_category_votes():
+        """Reset votes for a specific category by name or number (admin only)"""
+        if not require_admin():
+            return jsonify({"success": False, "message": "Admin access required"}), 403
+        
+        data = request.get_json()
+        category_input = data.get('category', '').strip()
+        
+        if not category_input:
+            return jsonify({"success": False, "message": "Category name or number is required"}), 400
+        
+        # Load categories data
+        categories_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'categories.js')
+        category_id = None
+        
+        try:
+            with open(categories_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                # Simple parsing - find category by title or number
+                import re
+                
+                # Try to find by number first
+                if category_input.isdigit():
+                    pattern = rf'number:\s*{category_input}'
+                    if re.search(pattern, content):
+                        category_id = int(category_input)
+                else:
+                    # Find by title (case-insensitive)
+                    pattern = rf'title:\s*["\']([^"\']*)["\']'
+                    matches = re.findall(pattern, content, re.IGNORECASE)
+                    for i, title in enumerate(matches, 1):
+                        if title.upper() == category_input.upper():
+                            # Find the category number for this title
+                            lines = content.split('\n')
+                            for j, line in enumerate(lines):
+                                if f'title: "{title}"' in line or f"title: '{title}'" in line:
+                                    # Look backwards for number
+                                    for k in range(j, max(0, j-20), -1):
+                                        if 'number:' in lines[k]:
+                                            number_match = re.search(r'number:\s*(\d+)', lines[k])
+                                            if number_match:
+                                                category_id = int(number_match.group(1))
+                                                break
+                                    break
+                            break
+        except Exception as e:
+            print(f"Error parsing categories: {e}")
+            return jsonify({"success": False, "message": "Failed to parse categories"}), 500
+        
+        if not category_id:
+            return jsonify({"success": False, "message": "Category not found"}), 404
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute("DELETE FROM votes WHERE category_id = ?", (category_id,))
+            affected = cursor.rowcount
+            conn.commit()
+            conn.close()
+            return jsonify({"success": True, "deleted": affected, "message": f"Category {category_id} votes reset successfully"})
+        except Exception as e:
+            conn.close()
+            print(f"Error resetting category votes: {e}")
+            return jsonify({"success": False, "message": "Failed to reset category votes"}), 500
+
+    @app.get("/api/admin/total-votes")
+    def admin_total_votes():
+        """Get total vote count (admin/analyst)"""
+        if 'admin_authenticated' not in session or not session.get('admin_authenticated'):
+            return jsonify({"success": False, "message": "Authentication required"}), 403
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM votes")
+        total = cursor.fetchone()[0]
+        conn.close()
+        
+        return jsonify({"success": True, "total": total})
+
+    @app.post("/api/admin/birthdates")
+    def admin_add_birthdate():
+        """Add a new birth date to CSV and JSON files (admin only)"""
+        if not require_admin():
+            return jsonify({"success": False, "message": "Admin access required"}), 403
+        
+        data = request.get_json()
+        day = data.get('day')
+        month = data.get('month')
+        year = data.get('year')
+        
+        if not all([day, month, year]):
+            return jsonify({"success": False, "message": "Please provide day, month, and year"}), 400
+        
+        try:
+            day = int(day)
+            month = int(month)
+            year = int(year)
+            
+            if not (1 <= day <= 31) or not (1 <= month <= 12) or not (1900 <= year <= 2100):
+                return jsonify({"success": False, "message": "Invalid date values"}), 400
+            
+            formatted_birthdate = format_birthdate(day, month, year)
+            
+            # Add to JSON file
+            json_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'Birth_Dates_Final_Array.json')
+            with open(json_path, 'r', encoding='utf-8') as f:
+                json_data = json.load(f)
+            
+            # Check if already exists
+            if any(item.get('Birth Date', '').strip() == formatted_birthdate for item in json_data):
+                return jsonify({"success": False, "message": "Birth date already exists"}), 409
+            
+            json_data.append({"Birth Date": formatted_birthdate})
+            
+            with open(json_path, 'w', encoding='utf-8') as f:
+                json.dump(json_data, f, indent=2, ensure_ascii=False)
+            
+            # Add to CSV file
+            csv_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'Birth_Dates_Final.csv')
+            with open(csv_path, 'a', encoding='utf-8', newline='') as f:
+                f.write(f"\n{formatted_birthdate}")
+            
+            # Reload birthdates in memory
+            load_birthdates()
+            
+            return jsonify({"success": True, "message": "Birth date added successfully"})
+        except Exception as e:
+            print(f"Error adding birth date: {e}")
+            return jsonify({"success": False, "message": "Failed to add birth date"}), 500
+
+    @app.post("/api/admin/nominees")
+    def admin_add_nominee():
+        """Add a nominee to a category (admin only)"""
+        if not require_admin():
+            return jsonify({"success": False, "message": "Admin access required"}), 403
+        
+        data = request.get_json()
+        category_id = data.get('category_id')
+        name = data.get('name', '').strip()
+        
+        if not category_id or not name:
+            return jsonify({"success": False, "message": "Please provide category_id and name"}), 400
+        
+        try:
+            # Load categories.js file
+            categories_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'categories.js')
+            with open(categories_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # Find and update the category
+            import re
+            # This is a simple approach - find the category and add nominee
+            # More robust parsing would be needed for production
+            category_pattern = f'number: {category_id}'
+            if category_pattern not in content:
+                return jsonify({"success": False, "message": "Category not found"}), 404
+            
+            # Add nominee to the nominees array
+            # Find the nominees array for this category
+            pattern = rf'(number:\s*{category_id}[^}}]*nominees:\s*\[)([^\]]*)(\])'
+            match = re.search(pattern, content, re.DOTALL)
+            
+            if match:
+                nominees_content = match.group(2)
+                # Add new nominee
+                new_content = content[:match.start(2)] + nominees_content.rstrip() + f'\n      "{name}",' + content[match.end(2):]
+                
+                with open(categories_path, 'w', encoding='utf-8') as f:
+                    f.write(new_content)
+                
+                return jsonify({"success": True, "message": "Nominee added successfully"})
+            else:
+                return jsonify({"success": False, "message": "Could not update category"}), 500
+        except Exception as e:
+            print(f"Error adding nominee: {e}")
+            return jsonify({"success": False, "message": "Failed to add nominee"}), 500
+
+    @app.delete("/api/admin/nominees")
+    def admin_remove_nominee():
+        """Remove a nominee from a category (admin only)"""
+        if not require_admin():
+            return jsonify({"success": False, "message": "Admin access required"}), 403
+        
+        data = request.get_json()
+        category_id = data.get('category_id')
+        nominee_index = data.get('nominee_index')
+        
+        if category_id is None or nominee_index is None:
+            return jsonify({"success": False, "message": "Please provide category_id and nominee_index"}), 400
+        
+        try:
+            # Load categories.js file
+            categories_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'categories.js')
+            with open(categories_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # Find the category and remove the nominee
+            import re
+            # This is a simplified approach - find nominees array and remove the index
+            pattern = rf'(number:\s*{category_id}[^}}]*nominees:\s*\[)([^\]]*)(\])'
+            match = re.search(pattern, content, re.DOTALL)
+            
+            if match:
+                nominees_content = match.group(2)
+                nominees_lines = [line.strip() for line in nominees_content.split('\n') if line.strip() and not line.strip().startswith('//')]
+                # Filter out empty lines and extract nominee names
+                nominees_list = []
+                for line in nominees_lines:
+                    line = line.strip().rstrip(',').strip('"').strip("'")
+                    if line:
+                        nominees_list.append(line)
+                
+                if 0 <= nominee_index < len(nominees_list):
+                    nominees_list.pop(nominee_index)
+                    # Rebuild nominees array
+                    new_nominees = ',\n      '.join(f'"{n}"' for n in nominees_list)
+                    new_content = content[:match.start(2)] + f'\n      {new_nominees}\n    ' + content[match.end(2):]
+                    
+                    with open(categories_path, 'w', encoding='utf-8') as f:
+                        f.write(new_content)
+                    
+                    # Also delete votes for this nominee
+                    conn = get_db()
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        "DELETE FROM votes WHERE category_id = ? AND nominee_id = ?",
+                        (category_id, nominee_index + 1)  # nominee_id is 1-based
+                    )
+                    conn.commit()
+                    conn.close()
+                    
+                    return jsonify({"success": True, "message": "Nominee removed successfully"})
+                else:
+                    return jsonify({"success": False, "message": "Invalid nominee index"}), 400
+            else:
+                return jsonify({"success": False, "message": "Category not found"}), 404
+        except Exception as e:
+            print(f"Error removing nominee: {e}")
+            return jsonify({"success": False, "message": "Failed to remove nominee"}), 500
 
     return app
 

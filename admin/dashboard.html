@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - Voting App</title>
+    <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- Left Sidebar Navigation -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle sidebar">
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 5h14M3 10h14M3 15h14"/>
+                    </svg>
+                </button>
+                <h2 class="sidebar-logo">Admin Panel</h2>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="#dashboard" class="nav-item active" data-page="dashboard">
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="6" height="6" rx="1"/>
+                        <rect x="11" y="3" width="6" height="6" rx="1"/>
+                        <rect x="3" y="11" width="6" height="6" rx="1"/>
+                        <rect x="11" y="11" width="6" height="6" rx="1"/>
+                    </svg>
+                    <span>Dashboard</span>
+                </a>
+                <a href="#users" class="nav-item" data-page="users" id="navUsers">
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M10 10a3 3 0 100-6 3 3 0 000 6z"/>
+                        <path d="M10 13c-3.314 0-6 1.343-6 3v1h12v-1c0-1.657-2.686-3-6-3z"/>
+                    </svg>
+                    <span>Users</span>
+                </a>
+                <a href="#charts" class="nav-item" data-page="charts">
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 15v2a1 1 0 001 1h12a1 1 0 001-1v-2M3 15l4-6 4 4 6-8"/>
+                    </svg>
+                    <span>Charts</span>
+                </a>
+                <a href="#votes" class="nav-item" data-page="votes" id="navVotes">
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"/>
+                        <path d="M4 5a2 2 0 012-2h8a2 2 0 012 2v10a2 2 0 01-2 2H6a2 2 0 01-2-2V5z"/>
+                        <path d="M8 10h4"/>
+                    </svg>
+                    <span>Vote Management</span>
+                </a>
+                <a href="#birthdates" class="nav-item" data-page="birthdates" id="navBirthdates">
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="4" width="14" height="14" rx="2"/>
+                        <path d="M8 2v4M12 2v4M3 10h14"/>
+                    </svg>
+                    <span>Birth Dates</span>
+                </a>
+                <a href="#nominees" class="nav-item" data-page="nominees" id="navNominees">
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M17 21v-2a4 4 0 00-4-4H7a4 4 0 00-4 4v2"/>
+                        <circle cx="12" cy="7" r="4"/>
+                    </svg>
+                    <span>Nominees</span>
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <button class="nav-item logout-nav" id="sidebarLogoutBtn">
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M13 7l5 5-5 5M8 7H3v10h5"/>
+                    </svg>
+                    <span>Logout</span>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <div class="main-wrapper">
+            <!-- Top Header -->
+            <header class="top-header">
+                <div class="header-left">
+                    <button class="mobile-menu-toggle" id="mobileMenuToggle" aria-label="Toggle menu">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M3 12h18M3 6h18M3 18h18"/>
+                        </svg>
+                    </button>
+                    <div class="search-container">
+                        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" class="search-icon">
+                            <circle cx="8" cy="8" r="6"/>
+                            <path d="m14 14-3-3"/>
+                        </svg>
+                        <input type="text" id="globalSearch" class="search-input" placeholder="Search...">
+                    </div>
+                </div>
+                <div class="header-right">
+                    <a href="../Chart/index.html" class="header-icon-btn" id="viewChartBtn" title="View Charts">
+                        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M3 15v2a1 1 0 001 1h12a1 1 0 001-1v-2M3 15l4-6 4 4 6-8"/>
+                        </svg>
+                    </a>
+                    <div class="user-profile">
+                        <div class="user-info">
+                            <span class="user-name" id="userName">Admin</span>
+                            <span class="user-role" id="roleBadge">Admin</span>
+                        </div>
+                        <div class="user-avatar">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
+                                <circle cx="12" cy="7" r="4"/>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Page Content -->
+            <main class="page-content">
+                <!-- Dashboard Page -->
+                <div class="page" id="page-dashboard">
+                    <div class="page-header">
+                        <h1>Dashboard</h1>
+                        <p class="page-subtitle">Overview of voting system statistics</p>
+                    </div>
+
+                    <!-- Stats Cards -->
+                    <div class="stats-grid">
+                        <div class="stat-card clickable-stat" id="totalUsersCard">
+                            <div class="stat-header">
+                                <span class="stat-label">Total Users</span>
+                                <div class="stat-icon user-icon">👥</div>
+                            </div>
+                            <div class="stat-value" id="totalUsers">-</div>
+                            <div class="stat-change positive">
+                                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor">
+                                    <path d="M6 2v8M2 6l4-4 4 4"/>
+                                </svg>
+                                <span>Registered users</span>
+                            </div>
+                        </div>
+                        <div class="stat-card clickable-stat" id="totalVotesCard">
+                            <div class="stat-header">
+                                <span class="stat-label">Total Votes</span>
+                                <div class="stat-icon vote-icon">📊</div>
+                            </div>
+                            <div class="stat-value" id="totalVotes">-</div>
+                            <div class="stat-change positive">
+                                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor">
+                                    <path d="M6 2v8M2 6l4-4 4 4"/>
+                                </svg>
+                                <span>Votes cast</span>
+                            </div>
+                        </div>
+                        <div class="stat-card clickable-stat" id="categoriesCard">
+                            <div class="stat-header">
+                                <span class="stat-label">Categories</span>
+                                <div class="stat-icon category-icon">📁</div>
+                            </div>
+                            <div class="stat-value" id="totalCategories">10</div>
+                            <div class="stat-change">
+                                <span>Active categories</span>
+                            </div>
+                        </div>
+                        <div class="stat-card highlight clickable-stat" id="voteDistributionCard">
+                            <div class="stat-header">
+                                <span class="stat-label">Vote Distribution</span>
+                                <div class="stat-icon">📈</div>
+                            </div>
+                            <div class="stat-value-small">By Category</div>
+                            <div class="stat-chart-preview" id="distributionPreview">
+                                <span>Loading...</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Category Vote Distribution -->
+                    <div class="content-card">
+                        <div class="card-header">
+                            <h2>Vote Distribution by Category</h2>
+                            <p class="card-subtitle">Shows nominees voted vs total nominees per category</p>
+                        </div>
+                        <div class="card-body">
+                            <div class="distribution-chart" id="distributionChart"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Users Page -->
+                <div class="page" id="page-users" style="display: none;">
+                    <div class="page-header">
+                        <h1>User Management</h1>
+                        <p class="page-subtitle">Manage registered users and their data</p>
+                    </div>
+
+                    <div class="content-card">
+                        <div class="card-header">
+                            <div class="search-container-inline">
+                                <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" class="search-icon">
+                                    <circle cx="8" cy="8" r="6"/>
+                                    <path d="m14 14-3-3"/>
+                                </svg>
+                                <input type="text" id="userSearch" class="search-input-inline" placeholder="Search users by name, email, phone, or access code...">
+                            </div>
+                            <div class="card-actions">
+                                <button class="btn-icon-text" id="refreshUsersBtn">
+                                    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M1 9c0 4.4 3.6 8 8 8s8-3.6 8-8-3.6-8-8-8M1 1v4h4"/>
+                                    </svg>
+                                    <span>Refresh</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-container">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Name</th>
+                                            <th>Email</th>
+                                            <th>Phone</th>
+                                            <th>Access Code</th>
+                                            <th>Votes</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="usersTableBody">
+                                        <tr><td colspan="6" class="loading">Loading users...</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Charts Page -->
+                <div class="page" id="page-charts" style="display: none;">
+                    <div class="page-header">
+                        <h1>Charts & Analytics</h1>
+                        <p class="page-subtitle">Visual representation of voting data</p>
+                    </div>
+                    <div class="content-card">
+                        <div class="card-body" style="text-align: center; padding: 40px;">
+                            <p style="margin-bottom: 20px;">View detailed charts and analytics</p>
+                            <a href="../Chart/index.html" class="btn-primary">Open Charts</a>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Vote Management Page -->
+                <div class="page" id="page-votes" style="display: none;">
+                    <div class="page-header">
+                        <h1>Vote Management</h1>
+                        <p class="page-subtitle">Reset and manage voting data</p>
+                    </div>
+
+                    <div class="action-cards-grid">
+                        <div class="action-card danger">
+                            <div class="action-card-header">
+                                <div class="action-icon">🗑️</div>
+                                <h3>Reset All Votes</h3>
+                            </div>
+                            <p>Clear all votes across all categories. This action cannot be undone.</p>
+                            <button class="btn-danger" id="resetAllVotesBtn">Reset All Votes</button>
+                        </div>
+                        <div class="action-card warning">
+                            <div class="action-card-header">
+                                <div class="action-icon">👤</div>
+                                <h3>Reset User Votes</h3>
+                            </div>
+                            <p>Clear votes for a specific user by entering their database ID or access code.</p>
+                            <button class="btn-warning" id="resetUserVotesBtn">Reset User Votes</button>
+                        </div>
+                        <div class="action-card warning">
+                            <div class="action-card-header">
+                                <div class="action-icon">📁</div>
+                                <h3>Reset Category Votes</h3>
+                            </div>
+                            <p>Clear all votes for a specific category by entering the category name.</p>
+                            <button class="btn-warning" id="resetCategoryVotesBtn">Reset Category Votes</button>
+                        </div>
+                    </div>
+
+                    <div class="modal" id="resetUserModal" style="display: none;">
+                        <div class="modal-content">
+                            <h3>Reset User Votes</h3>
+                            <p>Enter database ID (numeric) or access code (e.g., KLTZ24) to reset their votes:</p>
+                            <input type="text" id="resetUserIdInput" placeholder="User ID or Access Code" class="modal-input">
+                            <div class="modal-actions">
+                                <button class="btn-primary" id="confirmResetUserBtn">Reset</button>
+                                <button class="btn-secondary" id="cancelResetUserBtn">Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="modal" id="resetCategoryModal" style="display: none;">
+                        <div class="modal-content">
+                            <h3>Reset Category Votes</h3>
+                            <p>Enter category name (e.g., "PEACEMAKER AWARDS") or category number to reset all votes in that category:</p>
+                            <input type="text" id="resetCategoryInput" placeholder="Category Name or Number" class="modal-input">
+                            <div class="modal-actions">
+                                <button class="btn-primary" id="confirmResetCategoryBtn">Reset</button>
+                                <button class="btn-secondary" id="cancelResetCategoryBtn">Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Birth Dates Page -->
+                <div class="page" id="page-birthdates" style="display: none;">
+                    <div class="page-header">
+                        <h1>Birth Date Management</h1>
+                        <p class="page-subtitle">Add new allowed birth dates</p>
+                    </div>
+
+                    <div class="content-card">
+                        <div class="card-header">
+                            <h2>Add Birth Date</h2>
+                        </div>
+                        <div class="card-body">
+                            <form id="addBirthdateForm" class="form-inline">
+                                <div class="form-group">
+                                    <label>Day</label>
+                                    <input type="number" id="birthDay" min="1" max="31" required>
+                                </div>
+                                <div class="form-group">
+                                    <label>Month</label>
+                                    <select id="birthMonth" required>
+                                        <option value="">Select Month</option>
+                                        <option value="1">January</option>
+                                        <option value="2">February</option>
+                                        <option value="3">March</option>
+                                        <option value="4">April</option>
+                                        <option value="5">May</option>
+                                        <option value="6">June</option>
+                                        <option value="7">July</option>
+                                        <option value="8">August</option>
+                                        <option value="9">September</option>
+                                        <option value="10">October</option>
+                                        <option value="11">November</option>
+                                        <option value="12">December</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Year</label>
+                                    <input type="number" id="birthYear" min="1900" max="2100" required>
+                                </div>
+                                <button type="submit" class="btn-primary">Add Birth Date</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Nominees Page -->
+                <div class="page" id="page-nominees" style="display: none;">
+                    <div class="page-header">
+                        <h1>Nominee Management</h1>
+                        <p class="page-subtitle">Manage nominees for each category</p>
+                    </div>
+
+                    <div class="categories-list" id="categoriesList">
+                        <!-- Categories will be loaded dynamically -->
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- User Details Modal -->
+    <div class="modal" id="userDetailsModal" style="display: none;">
+        <div class="modal-content">
+            <h3>User Details</h3>
+            <div id="userDetailsContent"></div>
+            <div class="modal-actions">
+                <button class="btn-secondary" id="closeUserModalBtn">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Message Toast -->
+    <div class="toast" id="toast"></div>
+
+    <script src="../data/categories.js" defer></script>
+    <script src="dashboard.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Login - Voting App</title>
+    <link rel="stylesheet" href="login.css">
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-card">
+            <div class="login-header">
+                <h1>Admin Access</h1>
+                <p>Enter your access code to continue</p>
+            </div>
+            
+            <div class="role-selector">
+                <button type="button" class="role-btn active" data-role="admin">
+                    <span class="role-icon">👤</span>
+                    <span>Admin</span>
+                </button>
+                <button type="button" class="role-btn" data-role="analyst">
+                    <span class="role-icon">📊</span>
+                    <span>Analyst</span>
+                </button>
+            </div>
+
+            <form id="adminLoginForm" class="login-form">
+                <div class="form-group">
+                    <label for="accessCode">Access Code</label>
+                    <input 
+                        type="text" 
+                        id="accessCode" 
+                        name="accessCode" 
+                        placeholder="Enter access code"
+                        required
+                        autocomplete="off"
+                        maxlength="6"
+                        class="code-input"
+                    >
+                </div>
+
+                <div class="error-message" id="errorMessage"></div>
+
+                <button type="submit" class="submit-btn" id="submitBtn">
+                    <span>Access Dashboard</span>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <script src="login.js"></script>
+</body>
+</html>
+
