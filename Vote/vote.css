@@ -257,8 +257,8 @@ body {
 .vote-btn.voted { background: #9ca3af; color: #fff; cursor: default; }
 
 /* Footer - shared styles */
-.site-footer { background: #fff; border-top: 1px solid var(--border); padding: 28px 0; margin-top: 36px; }
-.footer-grid { display: grid; gap: 20px; grid-template-columns: repeat(3, 1fr); align-items: start; }
+.site-footer { background: var(--surface); border-top: 1px solid var(--border); padding: 28px 0 0; margin-top: 36px; }
+.footer-grid { display: grid; gap: 20px; grid-template-columns: repeat(3, 1fr); align-items: start; padding-bottom: 32px; }
 .brand-mark { font-weight: 800; letter-spacing: 0.6px; margin: 0; font-size: 20px; }
 .muted { color: var(--muted); }
 .footer-contact ul { margin: 8px 0 0; padding: 0; list-style: none; }
@@ -268,8 +268,71 @@ body {
 .socials img { width: 28px; height: 28px; filter: grayscale(1); transition: filter 200ms ease, transform 150ms ease; }
 .socials a:hover img { filter: none; transform: translateY(-1px); }
 .credit { margin-top: 10px; color: var(--muted); }
+
+/* Footer Logos */
+.footer-logos {
+    background: var(--bg-dim);
+    border-top: 1px solid var(--border);
+    padding: 32px 0;
+    margin-top: 0;
+}
+
+.logo-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 48px;
+    flex-wrap: wrap;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 16px;
+}
+
+.footer-logo {
+    height: 80px;
+    width: 80px;
+    object-fit: cover;
+    border-radius: 50%;
+    transition: transform 0.3s ease, opacity 0.3s ease, box-shadow 0.3s ease;
+    filter: grayscale(0.2);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.footer-logo:hover {
+    transform: translateY(-2px) scale(1.05);
+    filter: grayscale(0);
+    box-shadow: 0 4px 12px rgba(212, 175, 55, 0.3);
+}
+
+.pathway-logo {
+    max-width: 80px;
+    max-height: 80px;
+}
+
+.lds-logo {
+    max-width: 80px;
+    max-height: 80px;
+}
+
+.ensign-logo {
+    max-width: 80px;
+    max-height: 80px;
+}
 @media (max-width: 767px) {
     .footer-grid { grid-template-columns: 1fr; }
+    .logo-container {
+        gap: 32px;
+        padding: 0 12px;
+    }
+    .footer-logo {
+        height: 60px;
+        width: 60px;
+        max-height: 60px;
+        max-width: 60px;
+    }
+    .pathway-logo { max-width: 60px; max-height: 60px; }
+    .lds-logo { max-width: 60px; max-height: 60px; }
+    .ensign-logo { max-width: 60px; max-height: 60px; }
     .nav { grid-template-columns: auto 1fr auto !important; }
     .nav-list { position: fixed !important; top: var(--header-h) !important; left: 0 !important; right: 0 !important; width: 100% !important; background: #fff !important; border-bottom: 1px solid var(--border) !important; box-shadow: 0 10px 20px rgba(0,0,0,0.06) !important; padding: 10px 0 !important; flex-direction: column !important; gap: 12px !important; align-items: center !important; transform: translateY(-10px) !important; opacity: 0 !important; pointer-events: none !important; transition: transform 200ms ease, opacity 160ms ease !important; z-index: 30 !important; overflow-y: hidden !important; display: none !important; grid-column: unset !important; justify-self: unset !important; }
     .nav-list.is-open { display: flex !important; transform: translateY(0) !important; opacity: 1 !important; pointer-events: auto !important; }
