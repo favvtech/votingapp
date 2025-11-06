@@ -2,9 +2,9 @@
     'use strict';
 
     // API base URL - adjust based on your server setup
-    const API_BASE = window.location.origin.includes('localhost') || window.location.origin.includes('127.0.0.1')
+    const API_BASE = window.API_BASE || (window.location.origin.includes('localhost') || window.location.origin.includes('127.0.0.1')
         ? 'http://127.0.0.1:5000'
-        : window.location.origin;
+        : window.location.origin);
 
     // DOM Elements
     const loginTab = document.querySelector('[data-tab="login"]');

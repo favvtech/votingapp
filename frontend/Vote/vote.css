@@ -240,7 +240,7 @@ body {
     position: relative;
 }
 .category-card.is-open .category-content { 
-    max-height: 2000px; 
+    max-height: 10000px; 
     opacity: 1; 
     visibility: visible;
 }
