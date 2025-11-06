@@ -117,6 +117,12 @@ def generate_access_code() -> str:
 def create_app() -> Flask:
     app = Flask(__name__)
     app.secret_key = os.getenv('FLASK_SECRET', 'dev-secret-key-change-in-production')
+    # Cross-site session cookies for GitHub Pages (HTTPS only)
+    app.config.update(
+        SESSION_COOKIE_SAMESITE='None',
+        SESSION_COOKIE_SECURE=True,
+        SESSION_COOKIE_HTTPONLY=True,
+    )
     # Configure CORS to allow the frontend origin with credentials
     allowed_origin = os.getenv('ALLOWED_ORIGIN', '').strip()
     if allowed_origin:
