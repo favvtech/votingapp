@@ -3,11 +3,23 @@ import json
 import sqlite3
 import secrets
 import string
+import logging
 from datetime import datetime
 from typing import List, Set, Optional
 from flask import Flask, jsonify, request, session
 from flask_cors import CORS
+from dotenv import load_dotenv
 import requests
+
+# Load environment variables from .env file if present
+load_dotenv()
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Load allowed birthdates from JSON file
 ALLOWED_BIRTHDATES: Set[str] = set()
@@ -147,26 +159,87 @@ def generate_access_code() -> str:
         conn.close()
 
 def create_app() -> Flask:
+    # Read environment variables
+    DATABASE_URL = os.getenv("DATABASE_URL")
+    SECRET_KEY = os.getenv("SECRET_KEY") or os.getenv("FLASK_SECRET", "dev-secret-key-change-in-production")
+    FRONTEND_URL = os.getenv("FRONTEND_URL")
+    FORCE_HTTPS = os.getenv("FORCE_HTTPS", "0")
+    flask_env = os.getenv('FLASK_ENV', '').lower()
+    is_production = flask_env == 'production' or bool(DATABASE_URL)
+    
     app = Flask(__name__)
-    app.secret_key = os.getenv('FLASK_SECRET', 'dev-secret-key-change-in-production')
-    # Cross-site session cookies for GitHub Pages (HTTPS only)
-    app.config.update(
-        SESSION_COOKIE_SAMESITE='None',
-        SESSION_COOKIE_SECURE=True,
-        SESSION_COOKIE_HTTPONLY=True,
-    )
-    # Configure CORS to allow the frontend origin(s) with credentials
-    # Accept comma-separated origins in ALLOWED_ORIGIN
-    allowed_origin_env = os.getenv('ALLOWED_ORIGIN', '').strip()
-    if allowed_origin_env:
-        origins = [o.strip() for o in allowed_origin_env.split(',') if o.strip()]
+    app.secret_key = SECRET_KEY
+    
+    # Database configuration
+    # TODO: Full migration to SQLAlchemy - currently using SQLite fallback
+    # If DATABASE_URL is set (PostgreSQL), configure SQLAlchemy
+    # Otherwise, use existing SQLite implementation (get_db function)
+    if DATABASE_URL:
+        try:
+            from models import db
+            # Convert postgres:// to postgresql:// for SQLAlchemy
+            db_url = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+            app.config["SQLALCHEMY_DATABASE_URI"] = db_url
+            app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+            db.init_app(app)
+            logger.info("SQLAlchemy configured with PostgreSQL")
+        except Exception as e:
+            logger.error(f"Failed to configure SQLAlchemy: {e}")
+            logger.warning("Falling back to SQLite")
     else:
-        # Defaults: GitHub Pages and custom domain
+        # Fallback to SQLite for local development
+        logger.info("Using SQLite for local development")
+    
+    # Session cookie configuration
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax" if not is_production else "None"
+    app.config["SESSION_COOKIE_SECURE"] = True if (FORCE_HTTPS == "1" or is_production) else False
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    
+    # CORS configuration
+    # Accept comma-separated origins in ALLOWED_ORIGIN or use FRONTEND_URL
+    allowed_origin_env = os.getenv('ALLOWED_ORIGIN', '').strip()
+    
+    if FRONTEND_URL:
+        # Production: use FRONTEND_URL
+        CORS(app, supports_credentials=True, origins=[FRONTEND_URL])
+        logger.info(f"CORS configured for frontend: {FRONTEND_URL}")
+    elif allowed_origin_env:
+        # Multiple origins from ALLOWED_ORIGIN
+        origins = [o.strip() for o in allowed_origin_env.split(',') if o.strip()]
+        CORS(app, supports_credentials=True, resources={r"/api/*": {"origins": origins}})
+        logger.info(f"CORS configured for origins: {origins}")
+    elif flask_env == 'development' or flask_env == '':
+        # Local development: allow common localhost origins
+        origins = [
+            "http://localhost:3000",
+            "http://localhost:5500",
+            "http://localhost:8000",
+            "http://localhost:8080",
+            "http://localhost:5000",
+            "http://127.0.0.1:3000",
+            "http://127.0.0.1:5500",
+            "http://127.0.0.1:8000",
+            "http://127.0.0.1:8080",
+            "http://127.0.0.1:5000",
+            "http://localhost",
+            "http://127.0.0.1",
+        ]
+        CORS(app, supports_credentials=True, resources={
+            r"/api/*": {
+                "origins": origins,
+                "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+                "allow_headers": ["Content-Type", "X-Access-Code", "X-Admin-Code", "Authorization"]
+            }
+        })
+        logger.info("CORS configured for local development")
+    else:
+        # Production defaults: GitHub Pages and custom domain
         origins = [
             "https://favvtech.github.io",
             "https://votingapp.ibaraysas.com",
         ]
-    CORS(app, supports_credentials=True, resources={r"/api/*": {"origins": origins}})
+        CORS(app, supports_credentials=True, resources={r"/api/*": {"origins": origins}})
+        logger.info(f"CORS configured for production origins: {origins}")
     
     # Load birthdates and initialize database on startup
     load_birthdates()
@@ -1036,6 +1109,8 @@ def create_app() -> Flask:
 app = create_app()
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    # Use PORT from environment (Render provides this) or default to 5000
+    port = int(os.environ.get("PORT", 5000))
+    app.run(debug=True, host='0.0.0.0', port=port)
 
 
