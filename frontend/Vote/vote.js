@@ -397,18 +397,12 @@
         categoriesScriptInjected = true;
         const tried = new Set();
         const paths = [
-            // relative from /Vote/
-            '../../data/categories.js',
-            // site-root absolute for GitHub Pages
-            (function(){
-                try {
-                    const { origin, pathname } = window.location;
-                    // Extract repo name from pathname like /votingapp/Vote/index.html
-                    const parts = pathname.split('/').filter(Boolean);
-                    const repo = parts.length > 0 ? parts[0] : '';
-                    return repo ? `${origin}/${repo}/data/categories.js` : `${origin}/data/categories.js`;
-                } catch(_){ return '/data/categories.js'; }
-            })(),
+            // Preferred: categories shipped under frontend root
+            '../data/categories.js',
+            // Fallback absolute from site origin when app is deployed at domain root
+            `${window.location.origin}/frontend/data/categories.js`,
+            // Legacy location if site root serves repo root
+            `${window.location.origin}/data/categories.js`,
         ];
         paths.forEach((src) => {
             if (tried.has(src)) return; tried.add(src);

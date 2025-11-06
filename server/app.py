@@ -123,13 +123,18 @@ def create_app() -> Flask:
         SESSION_COOKIE_SECURE=True,
         SESSION_COOKIE_HTTPONLY=True,
     )
-    # Configure CORS to allow the frontend origin with credentials
-    allowed_origin = os.getenv('ALLOWED_ORIGIN', '').strip()
-    if allowed_origin:
-        CORS(app, supports_credentials=True, resources={r"/api/*": {"origins": [allowed_origin]}})
+    # Configure CORS to allow the frontend origin(s) with credentials
+    # Accept comma-separated origins in ALLOWED_ORIGIN
+    allowed_origin_env = os.getenv('ALLOWED_ORIGIN', '').strip()
+    if allowed_origin_env:
+        origins = [o.strip() for o in allowed_origin_env.split(',') if o.strip()]
     else:
-        # Safe default for your current deployment
-        CORS(app, supports_credentials=True, resources={r"/api/*": {"origins": ["https://favvtech.github.io"]}})
+        # Defaults: GitHub Pages and custom domain
+        origins = [
+            "https://favvtech.github.io",
+            "https://votingapp.ibaraysas.com",
+        ]
+    CORS(app, supports_credentials=True, resources={r"/api/*": {"origins": origins}})
     
     # Load birthdates and initialize database on startup
     load_birthdates()
