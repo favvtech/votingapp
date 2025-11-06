@@ -81,6 +81,7 @@
             if (response.ok && data.success) {
                 // Store role in sessionStorage
                 sessionStorage.setItem('admin_role', selectedRole);
+                try { sessionStorage.setItem('admin_code', code); } catch(_) {}
                 // Redirect to dashboard
                 window.location.href = 'dashboard.html';
             } else {

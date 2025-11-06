@@ -94,6 +94,38 @@ def get_db():
     conn.row_factory = sqlite3.Row
     return conn
 
+def get_user_by_access_code(code: str) -> Optional[sqlite3.Row]:
+    if not code:
+        return None
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM users WHERE access_code = ?", (code.strip().upper(),))
+    user = cur.fetchone()
+    conn.close()
+    return user
+
+def authenticate_request() -> Optional[int]:
+    """Return user_id if request is authenticated via session or access code header."""
+    if 'user_id' in session:
+        return int(session['user_id'])
+    # Header-based fallback: X-Access-Code or Bearer <code>
+    code = request.headers.get('X-Access-Code', '').strip()
+    if not code:
+        auth = request.headers.get('Authorization', '')
+        if auth.lower().startswith('bearer '):
+            code = auth.split(' ', 1)[1].strip()
+    if code:
+        user = get_user_by_access_code(code)
+        if user:
+            # optionally attach a lightweight session
+            session['user_id'] = user['id']
+            session['access_code'] = user['access_code']
+            session['fullname'] = user['fullname']
+            session['phone'] = user['phone']
+            session['birthdate'] = user['birthdate']
+            return int(user['id'])
+    return None
+
 def generate_access_code() -> str:
     """Generate a unique 6-character access code: 4 letters + 2 numbers"""
     letters = string.ascii_uppercase
@@ -433,7 +465,8 @@ def create_app() -> Flask:
                         "id": user['id'],
                         "fullname": user['fullname'],
                         "phone": user['phone'],
-                        "email": user['email']
+                        "email": user['email'],
+                        "access_code": user['access_code']
                     }
                 })
         
@@ -448,7 +481,8 @@ def create_app() -> Flask:
     @app.post("/api/vote")
     def cast_vote():
         """Cast a vote for a nominee in a category; one vote per user per category"""
-        if 'user_id' not in session:
+        user_id = authenticate_request()
+        if not user_id:
             return jsonify({"success": False, "message": "Not authenticated"}), 401
         data = request.get_json() or {}
         try:
@@ -465,7 +499,7 @@ def create_app() -> Flask:
         try:
             cur.execute(
                 "INSERT OR IGNORE INTO votes (user_id, category_id, nominee_id) VALUES (?, ?, ?)",
-                (session['user_id'], category_id, nominee_id)
+                (user_id, category_id, nominee_id)
             )
             if cur.rowcount == 0:
                 # User already voted in this category
@@ -495,13 +529,14 @@ def create_app() -> Flask:
     @app.get("/api/my-votes")
     def my_votes():
         """Return categories the authenticated user has voted in"""
-        if 'user_id' not in session:
+        user_id = authenticate_request()
+        if not user_id:
             return jsonify({"success": False, "message": "Not authenticated"}), 401
         conn = get_db()
         cur = conn.cursor()
         cur.execute(
             "SELECT category_id, nominee_id, created_at FROM votes WHERE user_id = ?",
-            (session['user_id'],)
+            (user_id,)
         )
         rows = cur.fetchall()
         conn.close()
@@ -569,6 +604,16 @@ def create_app() -> Flask:
                 "logged_in": True,
                 "role": role
             })
+        # Header fallback for cross-site cookie issues: X-Admin-Code
+        code = (request.headers.get('X-Admin-Code') or '').strip().upper()
+        if code == ADMIN_CODE:
+            session['admin_role'] = 'admin'
+            session['admin_authenticated'] = True
+            return jsonify({"logged_in": True, "role": 'admin'})
+        if code == ANALYST_CODE:
+            session['admin_role'] = 'analyst'
+            session['admin_authenticated'] = True
+            return jsonify({"logged_in": True, "role": 'analyst'})
         return jsonify({"logged_in": False})
 
     @app.post("/api/admin/logout")

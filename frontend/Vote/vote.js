@@ -188,9 +188,16 @@
                 }
 
                 try {
+                    const headers = { 'Content-Type': 'application/json' };
+                    try {
+                        const storedUser = JSON.parse(localStorage.getItem('user') || 'null');
+                        if (storedUser && storedUser.access_code) {
+                            headers['X-Access-Code'] = storedUser.access_code;
+                        }
+                    } catch(_) {}
                     const resp = await fetch(`${API_BASE}/api/vote`, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers,
                         credentials: 'include',
                         body: JSON.stringify({ category_id: categoryId, nominee_id: nomineeIdForBackend })
                     });
@@ -271,7 +278,14 @@
     }
     async function refreshMyVotes(){
         try {
-            const resp = await fetch(`${API_BASE}/api/my-votes`, { credentials: 'include' });
+            const headers = {};
+            try {
+                const storedUser = JSON.parse(localStorage.getItem('user') || 'null');
+                if (storedUser && storedUser.access_code) {
+                    headers['X-Access-Code'] = storedUser.access_code;
+                }
+            } catch(_) {}
+            const resp = await fetch(`${API_BASE}/api/my-votes`, { credentials: 'include', headers });
             if (!resp.ok) return;
             const data = await resp.json();
             if (!data || !data.success) return;

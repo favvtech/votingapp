@@ -174,6 +174,14 @@
             } catch (_) {}
             const ac = document.getElementById('accessCodeCircle');
             if (ac) ac.remove();
+        } else {
+            // Persist/refresh user in localStorage so pages can show A/C circle
+            try {
+                localStorage.setItem('user', JSON.stringify(user));
+                if (user.access_code) {
+                    localStorage.setItem('user_access_code', user.access_code);
+                }
+            } catch (_) {}
         }
         wireProfileMenu();
         updateNavigation(!!user);

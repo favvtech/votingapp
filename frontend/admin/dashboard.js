@@ -12,9 +12,15 @@
     // Check admin/analyst session on load
     async function checkAdminSession() {
         try {
+            const headers = {};
+            try {
+                const code = sessionStorage.getItem('admin_code');
+                if (code) headers['X-Admin-Code'] = code;
+            } catch(_) {}
             const response = await fetch(`${API_BASE}/api/admin/check-session`, {
                 method: 'GET',
-                credentials: 'include'
+                credentials: 'include',
+                headers
             });
             const data = await response.json();
             
