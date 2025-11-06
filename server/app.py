@@ -117,7 +117,13 @@ def generate_access_code() -> str:
 def create_app() -> Flask:
     app = Flask(__name__)
     app.secret_key = os.getenv('FLASK_SECRET', 'dev-secret-key-change-in-production')
-    CORS(app, supports_credentials=True)
+    # Configure CORS to allow the frontend origin with credentials
+    allowed_origin = os.getenv('ALLOWED_ORIGIN', '').strip()
+    if allowed_origin:
+        CORS(app, supports_credentials=True, resources={r"/api/*": {"origins": [allowed_origin]}})
+    else:
+        # Safe default for your current deployment
+        CORS(app, supports_credentials=True, resources={r"/api/*": {"origins": ["https://favvtech.github.io"]}})
     
     # Load birthdates and initialize database on startup
     load_birthdates()
