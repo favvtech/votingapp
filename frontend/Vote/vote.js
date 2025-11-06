@@ -188,13 +188,23 @@
                 }
 
                 try {
+                    // Build headers with access code for cookie-free authentication
                     const headers = { 'Content-Type': 'application/json' };
                     try {
                         const storedUser = JSON.parse(localStorage.getItem('user') || 'null');
                         if (storedUser && storedUser.access_code) {
                             headers['X-Access-Code'] = storedUser.access_code;
+                        } else {
+                            // Try alternative storage location
+                            const altCode = localStorage.getItem('user_access_code');
+                            if (altCode) {
+                                headers['X-Access-Code'] = altCode;
+                            }
                         }
-                    } catch(_) {}
+                    } catch(e) {
+                        console.warn('Could not read access code from storage:', e);
+                    }
+                    
                     const resp = await fetch(`${API_BASE}/api/vote`, {
                         method: 'POST',
                         headers,
@@ -283,9 +293,15 @@
                 const storedUser = JSON.parse(localStorage.getItem('user') || 'null');
                 if (storedUser && storedUser.access_code) {
                     headers['X-Access-Code'] = storedUser.access_code;
+                } else {
+                    const altCode = localStorage.getItem('user_access_code');
+                    if (altCode) headers['X-Access-Code'] = altCode;
                 }
             } catch(_) {}
-            const resp = await fetch(`${API_BASE}/api/my-votes`, { credentials: 'include', headers });
+            const resp = await fetch(`${API_BASE}/api/my-votes`, { 
+                credentials: 'include', 
+                headers 
+            });
             if (!resp.ok) return;
             const data = await resp.json();
             if (!data || !data.success) return;

@@ -513,8 +513,9 @@
                     // Store user data in localStorage for frontend access
                     if (data.user) {
                         localStorage.setItem('user', JSON.stringify(data.user));
-                        // Show access code circle if user has access code
+                        // Also store access code separately for easy retrieval
                         if (data.user.access_code) {
+                            localStorage.setItem('user_access_code', data.user.access_code);
                             showAccessCode(data.user.access_code);
                         }
                     }
@@ -639,8 +640,9 @@
                     // Store user data in localStorage
                     if (data.user) {
                         localStorage.setItem('user', JSON.stringify(data.user));
-                        // Show access code circle
+                        // Also store access code separately for easy retrieval
                         if (data.user.access_code) {
+                            localStorage.setItem('user_access_code', data.user.access_code);
                             showAccessCode(data.user.access_code);
                         }
                     }

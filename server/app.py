@@ -450,7 +450,8 @@ def create_app() -> Flask:
 
     @app.get("/api/check-session")
     def check_session():
-        """Check if user is logged in"""
+        """Check if user is logged in - supports both session cookies and header-based auth"""
+        # Try session first
         if 'user_id' in session:
             conn = get_db()
             cursor = conn.cursor()
@@ -459,6 +460,33 @@ def create_app() -> Flask:
             conn.close()
             
             if user:
+                return jsonify({
+                    "logged_in": True,
+                    "user": {
+                        "id": user['id'],
+                        "fullname": user['fullname'],
+                        "phone": user['phone'],
+                        "email": user['email'],
+                        "access_code": user['access_code']
+                    }
+                })
+        
+        # Fallback: header-based authentication
+        code = request.headers.get('X-Access-Code', '').strip()
+        if not code:
+            auth = request.headers.get('Authorization', '')
+            if auth.lower().startswith('bearer '):
+                code = auth.split(' ', 1)[1].strip()
+        
+        if code:
+            user = get_user_by_access_code(code)
+            if user:
+                # Create session for future requests
+                session['user_id'] = user['id']
+                session['access_code'] = user['access_code']
+                session['fullname'] = user['fullname']
+                session['phone'] = user['phone']
+                session['birthdate'] = user['birthdate']
                 return jsonify({
                     "logged_in": True,
                     "user": {

@@ -9,17 +9,41 @@
     // Check if user is logged in
     async function checkAuthStatus() {
         try {
+            const headers = {};
+            // Always send access code if available (works even if cookies are blocked)
+            try {
+                const storedUser = JSON.parse(localStorage.getItem('user') || 'null');
+                if (storedUser && storedUser.access_code) {
+                    headers['X-Access-Code'] = storedUser.access_code;
+                }
+            } catch(_) {}
+            
             const response = await fetch(`${API_BASE}/api/check-session`, {
                 method: 'GET',
-                credentials: 'include'
+                credentials: 'include',
+                headers
             });
             const data = await response.json();
-            return data.logged_in && data.user;
+            if (data.logged_in && data.user) {
+                // Update localStorage with fresh data from server
+                try {
+                    localStorage.setItem('user', JSON.stringify(data.user));
+                    if (data.user.access_code) {
+                        localStorage.setItem('user_access_code', data.user.access_code);
+                    }
+                } catch(_) {}
+                return data.user;
+            }
+            return null;
         } catch (error) {
             console.error('Auth check error:', error);
             // Fallback to localStorage
-            const user = localStorage.getItem('user');
-            return user ? JSON.parse(user) : null;
+            try {
+                const userStr = localStorage.getItem('user');
+                return userStr ? JSON.parse(userStr) : null;
+            } catch(_) {
+                return null;
+            }
         }
     }
 
