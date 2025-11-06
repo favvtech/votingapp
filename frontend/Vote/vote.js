@@ -195,8 +195,13 @@
                         body: JSON.stringify({ category_id: categoryId, nominee_id: nomineeIdForBackend })
                     });
                     if (resp.status === 401) {
-                        // Not logged in – non-blocking notice
-                        console.warn('Please log in to vote.');
+                        // Not logged in – show clear feedback and send to login
+                        alert('Please log in to vote. You will be redirected to the login page.');
+                        try {
+                            // Preserve return path to categories after login
+                            sessionStorage.setItem('postLoginRedirect', '../Vote/index.html');
+                        } catch(_) {}
+                        window.location.href = '../Auth/login.html#login';
                         return;
                     }
                     if (resp.status === 409) {
