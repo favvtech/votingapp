@@ -34,7 +34,12 @@
     <meta name="msapplication-TileColor" content="#D4AF37" />
     
     <link rel="stylesheet" href="vote.css" />
-    <script>window.API_BASE='https://votingapp-0phb.onrender.com';</script>
+    <script>
+        // Set window.API_BASE to the backend URL after deployment, e.g.
+        // window.API_BASE = "https://your-backend-onrender.com";
+        // For local development, set this to http://127.0.0.1:5000
+        window.API_BASE = window.API_BASE || window.location.origin;
+    </script>
 </head>
 <body>
     <header class="site-header">

@@ -2,9 +2,8 @@
 (function() {
     'use strict';
 
-    const API_BASE = window.API_BASE || (window.location.origin.includes('localhost') || window.location.origin.includes('127.0.0.1')
-        ? 'http://127.0.0.1:5000'
-        : window.location.origin);
+    // API_BASE: in production set window.API_BASE in HTML to your backend URL
+    const API_BASE = (typeof window !== 'undefined' && window.API_BASE) || window.location.origin;
 
     async function checkAdminAccess() {
         try {
