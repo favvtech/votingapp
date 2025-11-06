@@ -37,7 +37,7 @@
         <div class="auth-card">
             <div class="auth-header">
                 <div class="logo-section">
-                    <div class="logo-circle"></div>
+                    <div class="logo-circle"><img src="../assets/icons/award.svg" alt="Award" class="logo-circle-icon" /></div>
                     <h1 class="auth-title">2025 Awards</h1>
                 </div>
                 <p class="auth-subtitle">Sign in or create your account</p>
@@ -78,55 +78,7 @@
                         </div>
                     </div>
 
-                    <div class="form-group">
-                        <label for="loginPhone" class="form-label">Phone Number <span class="required">*</span></label>
-                        <div class="phone-group">
-                            <div class="country-code-combo">
-                                <div class="combo-input-wrapper">
-                                    <input 
-                                        type="text" 
-                                        id="loginCountryCodeInput" 
-                                        class="combo-input" 
-                                        placeholder="+234"
-                                        value="+234"
-                                        autocomplete="tel-country-code"
-                                    />
-                                    <button type="button" class="combo-dropdown-btn" id="loginCountryCodeToggle" aria-expanded="false">
-                                        <svg class="dropdown-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                            <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                                        </svg>
-                                    </button>
-                                </div>
-                                <div class="country-code-dropdown" id="loginCountryCodeDropdown">
-                                    <button type="button" class="country-code-item" data-value="+234"><span class="country-flag">🇳🇬</span> +234</button>
-                                    <button type="button" class="country-code-item" data-value="+1"><span class="country-flag">🇺🇸</span> +1</button>
-                                    <button type="button" class="country-code-item" data-value="+44"><span class="country-flag">🇬🇧</span> +44</button>
-                                    <button type="button" class="country-code-item" data-value="+233"><span class="country-flag">🇬🇭</span> +233</button>
-                                    <button type="button" class="country-code-item" data-value="+254"><span class="country-flag">🇰🇪</span> +254</button>
-                                    <button type="button" class="country-code-item" data-value="+27"><span class="country-flag">🇿🇦</span> +27</button>
-                                    <button type="button" class="country-code-item" data-value="+91"><span class="country-flag">🇮🇳</span> +91</button>
-                                    <button type="button" class="country-code-item" data-value="+86"><span class="country-flag">🇨🇳</span> +86</button>
-                                    <button type="button" class="country-code-item" data-value="+81"><span class="country-flag">🇯🇵</span> +81</button>
-                                    <button type="button" class="country-code-item" data-value="+49"><span class="country-flag">🇩🇪</span> +49</button>
-                                    <button type="button" class="country-code-item" data-value="+33"><span class="country-flag">🇫🇷</span> +33</button>
-                                    <button type="button" class="country-code-item" data-value="+39"><span class="country-flag">🇮🇹</span> +39</button>
-                                    <button type="button" class="country-code-item" data-value="+61"><span class="country-flag">🇦🇺</span> +61</button>
-                                    <button type="button" class="country-code-item" data-value="+55"><span class="country-flag">🇧🇷</span> +55</button>
-                                    <button type="button" class="country-code-item" data-value="+52"><span class="country-flag">🇲🇽</span> +52</button>
-                                </div>
-                                <input type="hidden" id="loginCountryCode" value="+234" required>
-                            </div>
-                            <input 
-                                type="tel" 
-                                id="loginPhone" 
-                                class="form-input phone-input" 
-                                placeholder="Enter your phone number"
-                                required
-                                autocomplete="tel"
-                            />
-                        </div>
-                        <span class="form-error" data-error="loginPhone"></span>
-                    </div>
+                    <!-- Phone number removed for login by request -->
 
                     <div class="form-group">
                         <label for="loginAccessCode" class="form-label">Access Code <span class="required">*</span></label>

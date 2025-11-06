@@ -192,8 +192,9 @@ def create_app() -> Flask:
         data = request.get_json()
         firstname = data.get('firstname', '').strip()
         lastname = data.get('lastname', '').strip()
-        phone = data.get('phone', '').strip()
-        country_code = data.get('country_code', '+1').strip()
+        # phone and country_code are no longer required for login
+        phone = (data.get('phone') or '').strip()
+        country_code = (data.get('country_code') or '').strip()
         email = data.get('email') or ''
         email = email.strip() if email else None
         day = data.get('day')
@@ -322,7 +323,7 @@ def create_app() -> Flask:
         fullname = f"{firstname} {lastname}".strip()
         
         # Validate required fields
-        if not firstname or not lastname or not phone or not access_code or not all([day, month, year]):
+        if not firstname or not lastname or not access_code or not all([day, month, year]):
             return jsonify({"success": False, "message": "Please fill all required fields"}), 400
         
         # Format birthdate
@@ -337,8 +338,8 @@ def create_app() -> Flask:
         # Normalize fullname for comparison
         fullname_normalized = fullname.lower().strip()
         
-        # Full phone number with country code
-        full_phone = f"{country_code}{phone}"
+        # Phone not required; keep for backward compatibility if provided
+        full_phone = f"{country_code}{phone}" if (country_code and phone) else None
         
         conn = get_db()
         cursor = conn.cursor()

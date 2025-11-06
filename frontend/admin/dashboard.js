@@ -80,6 +80,7 @@
                 const targetPageEl = document.getElementById(`page-${targetPage}`);
                 if (targetPageEl) {
                     targetPageEl.style.display = 'block';
+                    
                 }
                 
                 // Close sidebar on mobile

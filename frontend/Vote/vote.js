@@ -2,7 +2,7 @@
     const API_BASE = (window.location.origin.includes('localhost') || window.location.origin.includes('127.0.0.1'))
         ? 'http://127.0.0.1:5000'
         : window.location.origin;
-    const categoriesData = (window.CATEGORIES || []).slice();
+    let categoriesData = [];
 
     function generatePlaceholderImage(name) {
         const colors = ['#c9a227', '#b38a10', '#8b6914', '#6b4f0a'];
@@ -98,9 +98,30 @@
         }
     }
 
+    let categoriesInitialized = false;
+    
     function initializeCategories() {
+        // Prevent multiple initializations
+        if (categoriesInitialized) {
+            console.warn('Categories already initialized, skipping...');
+            return;
+        }
+        
         const grid = document.getElementById('categories-grid');
-        if (!grid) return;
+        if (!grid) {
+            console.error('Categories grid not found');
+            return;
+        }
+
+        if (!categoriesData || categoriesData.length === 0) {
+            console.error('No categories data available', categoriesData);
+            grid.innerHTML = '<p style="text-align: center; padding: 40px; color: var(--muted);">Categories failed to load. Please refresh the page.</p>';
+            return;
+        }
+
+        // Clear existing categories to prevent duplicates
+        grid.innerHTML = '';
+        console.log(`Initializing ${categoriesData.length} categories...`);
 
         categoriesData.forEach(category => {
             const card = createCategoryCard(category);
@@ -124,7 +145,10 @@
         document.querySelectorAll('.category-card').forEach(card => {
             const toggle = card.querySelector('.category-toggle');
             card.addEventListener('click', (e) => {
+                // Don't toggle if clicking on toggle button, vote buttons, or nominee cards
                 if (e.target === toggle || (toggle && toggle.contains(e.target))) return;
+                if (e.target.closest('.vote-btn')) return;
+                if (e.target.closest('.nominee-card')) return;
                 toggleCategory(card);
             });
             if (toggle) {
@@ -135,10 +159,15 @@
             }
         });
 
-        // Add vote button handlers
-        document.querySelectorAll('.vote-btn').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
+        // Add vote button handlers using event delegation for better reliability
+        if (grid) {
+            grid.addEventListener('click', async (e) => {
+                const btn = e.target.closest('.vote-btn');
+                if (!btn) return;
+                
                 e.stopPropagation();
+                e.preventDefault();
+                
                 const nomineeName = btn.dataset.nominee;
                 const categoryId = Number(btn.dataset.category);
                 const nomineeIdx = Number(btn.dataset.nomineeIndex);
@@ -146,13 +175,24 @@
                 // Prevent voting if already voted in this category
                 if (btn.classList.contains('voted')) return;
                 if (btn.getAttribute('data-locked') === 'true') return;
+                if (btn.hasAttribute('disabled')) return;
+
+                // Convert 0-based index to 1-based for backend (backend expects 1-based indices)
+                const nomineeIdForBackend = nomineeIdx + 1;
+
+                // Validate values before sending
+                if (isNaN(categoryId) || isNaN(nomineeIdForBackend) || categoryId <= 0 || nomineeIdForBackend <= 0) {
+                    console.error('Invalid vote data:', { categoryId, nomineeIdx, nomineeIdForBackend });
+                    alert('Invalid vote data. Please try again.');
+                    return;
+                }
 
                 try {
                     const resp = await fetch(`${API_BASE}/api/vote`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         credentials: 'include',
-                        body: JSON.stringify({ category_id: categoryId, nominee_id: nomineeIdx })
+                        body: JSON.stringify({ category_id: categoryId, nominee_id: nomineeIdForBackend })
                     });
                     if (resp.status === 401) {
                         // Not logged in – non-blocking notice
@@ -166,21 +206,43 @@
                         return;
                     }
                     if (!resp.ok) {
-                        console.error('Could not record your vote. Please try again.');
+                        // Get error message from response if available
+                        let errorMsg = 'Could not record your vote. Please try again.';
+                        try {
+                            const errorData = await resp.json();
+                            if (errorData.message) {
+                                errorMsg = errorData.message;
+                            }
+                        } catch (e) {
+                            // If response is not JSON, use default message
+                        }
+                        console.error('Vote failed:', resp.status, errorMsg);
+                        alert(errorMsg);
                         return;
                     }
 
-                    // Success – mark as voted in UI
+                    // Success – mark as voted in UI and keep category open
                     markCategoryVoted(categoryId, nomineeName, nomineeIdx);
+                    
+                    // Ensure the category stays open after voting
+                    const categoryCard = document.querySelector(`.category-card[data-category-id="${categoryId}"]`);
+                    if (categoryCard && !categoryCard.classList.contains('is-open')) {
+                        categoryCard.classList.add('is-open');
+                        updateOpenCategoryToast();
+                    }
                 } catch (err) {
                     console.error(err);
                     alert('Network error. Please try again.');
                 }
             });
-        });
+        }
 
         // On load, disable categories already voted by this user
         refreshMyVotes();
+        
+        // Mark as initialized
+        categoriesInitialized = true;
+        console.log('Categories initialized successfully');
     }
 
     function markCategoryVoted(categoryId, nomineeName, nomineeIdx){
@@ -188,12 +250,14 @@
             // lock all buttons to prevent further votes without changing their visual style
             b.setAttribute('data-locked','true');
             b.setAttribute('aria-disabled','true');
+            b.setAttribute('disabled','disabled');
             // Only the chosen nominee gets the voted style/text
             const isChosen = (nomineeName && b.dataset.nominee === nomineeName) ||
                              (typeof nomineeIdx === 'number' && Number(b.dataset.nomineeIndex) === Number(nomineeIdx));
             if (isChosen){
                 b.classList.add('voted');
                 b.textContent = 'Voted ✓';
+                b.removeAttribute('disabled'); // Allow the voted button to show its state
             } else {
                 b.classList.remove('voted');
                 b.textContent = 'Vote';
@@ -208,9 +272,11 @@
             if (!data || !data.success) return;
             (data.votes || []).forEach(v => {
                 const cid = Number(v.category_id);
-                const nid = Number(v.nominee_id);
+                const backendNomineeId = Number(v.nominee_id); // This is 1-based from backend
+                // Convert 1-based backend ID to 0-based frontend index
+                const frontendNomineeIdx = backendNomineeId - 1;
                 // resolve nominee name via DOM dataset or through index
-                markCategoryVoted(cid, undefined, nid);
+                markCategoryVoted(cid, undefined, frontendNomineeIdx);
             });
         } catch (e) {
             // ignore
@@ -320,20 +386,105 @@
         }
     }
 
-    // Initialize
-    initializeCategories();
-
-    // If navigated with #categories-grid, ensure it scrolls into view below sticky header
-    (function handleHashScroll() {
-        if (location.hash === '#categories-grid') {
-            const el = document.getElementById('categories-grid');
-            if (el) {
-                // Delay to ensure layout is painted
-                setTimeout(() => {
-                    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                }, 50);
+    // Initialize - wait for categories to be loaded
+    let retryCount = 0;
+    const maxRetries = 200; // 10 seconds max wait (200 * 50ms)
+    let initializationStarted = false;
+    
+    function waitForCategories() {
+        // Check if categories are available
+        if (window.CATEGORIES && Array.isArray(window.CATEGORIES) && window.CATEGORIES.length > 0) {
+            // Update categoriesData with the loaded categories
+            categoriesData = window.CATEGORIES.slice();
+            console.log(`Loaded ${categoriesData.length} categories`);
+            initializeCategories();
+            initializationStarted = true;
+        } else if (retryCount < maxRetries) {
+            retryCount++;
+            // Retry after a short delay if categories aren't loaded yet
+            setTimeout(waitForCategories, 50);
+        } else {
+            console.error('Categories failed to load after maximum retries');
+            const grid = document.getElementById('categories-grid');
+            if (grid) {
+                grid.innerHTML = '<p style="text-align: center; padding: 40px; color: var(--muted);">Categories failed to load. Please refresh the page.</p>';
             }
         }
+    }
+    
+    // Also listen for when the categories script loads (backup mechanism)
+    window.addEventListener('load', () => {
+        // Give it a bit more time after window load
+        setTimeout(() => {
+            if (!initializationStarted && window.CATEGORIES && Array.isArray(window.CATEGORIES) && window.CATEGORIES.length > 0) {
+                categoriesData = window.CATEGORIES.slice();
+                console.log(`Loaded ${categoriesData.length} categories (on window load)`);
+                initializeCategories();
+                initializationStarted = true;
+            } else if (!initializationStarted) {
+                console.warn('Categories still not loaded after window load event');
+                // Try one more time after a short delay
+                setTimeout(() => {
+                    if (window.CATEGORIES && Array.isArray(window.CATEGORIES) && window.CATEGORIES.length > 0) {
+                        categoriesData = window.CATEGORIES.slice();
+                        console.log(`Loaded ${categoriesData.length} categories (delayed check)`);
+                        initializeCategories();
+                        initializationStarted = true;
+                    }
+                }, 500);
+            }
+        }, 100);
+    });
+    
+    // Expose a manual initialization function as last resort
+    window.manualInitCategories = function() {
+        if (window.CATEGORIES && Array.isArray(window.CATEGORIES) && window.CATEGORIES.length > 0) {
+            categoriesData = window.CATEGORIES.slice();
+            console.log(`Manually loaded ${categoriesData.length} categories`);
+            initializeCategories();
+            initializationStarted = true;
+            return true;
+        }
+        return false;
+    };
+    
+    // Wait for DOM and categories to be ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', waitForCategories);
+    } else {
+        waitForCategories();
+    }
+
+    // Handle hash navigation for categories
+    (function handleHashNavigation() {
+        // Wait for categories to be initialized
+        setTimeout(() => {
+            const hash = location.hash;
+            if (hash && hash.startsWith('#category-')) {
+                const categoryId = parseInt(hash.replace('#category-', ''));
+                if (categoryId) {
+                    const categoryCard = document.querySelector(`.category-card[data-category-id="${categoryId}"]`);
+                    if (categoryCard && !categoryCard.classList.contains('is-open')) {
+                        // Close all categories first
+                        document.querySelectorAll('.category-card.is-open').forEach(card => {
+                            card.classList.remove('is-open');
+                        });
+                        // Open the requested category
+                        categoryCard.classList.add('is-open');
+                        updateOpenCategoryToast();
+                        // Scroll to category
+                        setTimeout(() => {
+                            categoryCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }, 100);
+                    }
+                }
+            } else if (hash === '#categories-grid') {
+                const el = document.getElementById('categories-grid');
+                if (el) {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            }
+        }, 300); // Wait for categories to be fully initialized
     })();
 })();
 

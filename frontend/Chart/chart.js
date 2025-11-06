@@ -509,19 +509,31 @@
     startPolling(index);
   }
 
-  // init
-  buildOptions();
-  render(0, {animateReplay:true});
-  firstRenderDone[0] = true;
-  startPolling(0);
+  // Expose functions globally for dashboard use
+  window.buildOptions = buildOptions;
+  window.render = render;
+  window.startPolling = startPolling;
+  window.setActive = setActive;
 
-  // replay and theme toggle - use setTimeout to ensure DOM is ready
-  setTimeout(()=>{
+  // Check if we're in dashboard (has .dashboard-container)
+  const isDashboard = document.querySelector('.dashboard-container');
+  
+  // Initialize chart - only auto-init if not in dashboard
+  if (!isDashboard) {
+    buildOptions();
+    render(0, {animateReplay:true});
+    firstRenderDone[0] = true;
+    startPolling(0);
+  }
+
+  // Setup replay and theme toggle buttons
+  function setupChartButtons() {
     const replayBtn = document.querySelector('[data-replay]');
-    if (replayBtn){
+    if (replayBtn && !replayBtn.dataset.setup) {
+      replayBtn.dataset.setup = 'true';
       const handleReplay = ()=>{
         const sel = document.getElementById('category');
-        render(Number(sel.value||0), {animateReplay:true});
+        if (sel) render(Number(sel.value||0), {animateReplay:true});
       };
       replayBtn.onclick = handleReplay;
       replayBtn.ontouchend = (e)=>{
@@ -531,15 +543,16 @@
     }
 
     const themeBtn = document.querySelector('[data-theme-toggle]');
-    // initialize theme from localStorage or system, and persist
-    (function initTheme(){
-      const stored = localStorage.getItem('theme');
-      const systemDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-      const theme = stored || (systemDark ? 'dark' : 'light');
-      document.documentElement.dataset.theme = theme;
-      if (themeBtn) themeBtn.textContent = theme==='dark' ? 'Light' : 'Dark';
-    })();
-    if (themeBtn){
+    if (themeBtn && !themeBtn.dataset.setup) {
+      themeBtn.dataset.setup = 'true';
+      // initialize theme from localStorage or system, and persist
+      (function initTheme(){
+        const stored = localStorage.getItem('theme');
+        const systemDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const theme = stored || (systemDark ? 'dark' : 'light');
+        document.documentElement.dataset.theme = theme;
+        if (themeBtn) themeBtn.textContent = theme==='dark' ? 'Light' : 'Dark';
+      })();
       const handleTheme = ()=>{
         const dark = document.documentElement.dataset.theme !== 'dark';
         const next = dark ? 'dark' : 'light';
@@ -553,7 +566,30 @@
         handleTheme();
       };
     }
+  }
+
+  // Setup buttons - use setTimeout to ensure DOM is ready
+  setTimeout(() => {
+    setupChartButtons();
   }, 100);
+
+  // Initialize chart function for dashboard
+  window.initChart = function() {
+    if (!window.CATEGORIES || window.CATEGORIES.length === 0) {
+      // Wait for categories to load
+      setTimeout(window.initChart, 100);
+      return;
+    }
+    const chartEl = document.getElementById('chart');
+    const categorySel = document.getElementById('category');
+    if (!chartEl || !categorySel) return;
+    
+    buildOptions();
+    render(0, {animateReplay:true});
+    firstRenderDone[0] = true;
+    startPolling(0);
+    setupChartButtons();
+  };
 })();
 
 

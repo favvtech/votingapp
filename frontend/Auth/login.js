@@ -452,8 +452,9 @@
 
             const firstname = document.getElementById('loginFirstname').value.trim();
             const lastname = document.getElementById('loginLastname').value.trim();
-            const phone = document.getElementById('loginPhone').value.replace(/\D/g, '').trim();
-            const countryCode = document.getElementById('loginCountryCode').value;
+            // Phone removed from login
+            const phone = '';
+            const countryCode = '';
             const accessCode = document.getElementById('loginAccessCode').value.trim().toUpperCase();
             const day = parseInt(document.getElementById('loginBirthDay').value) || parseInt(document.getElementById('loginBirthDayInput')?.value);
             const month = parseInt(document.getElementById('loginBirthMonth').value) || parseInt(document.getElementById('loginBirthMonthInput')?.value);
@@ -470,10 +471,7 @@
                 showError('loginLastname', 'Last name is required');
                 hasError = true;
             }
-            if (!phone) {
-                showError('loginPhone', 'Phone number is required');
-                hasError = true;
-            }
+            // no phone required for login
             if (!accessCode || accessCode.length !== 6) {
                 showError('loginAccessCode', 'Access code is required (6 characters: 4 letters + 2 numbers)');
                 hasError = true;
@@ -528,18 +526,18 @@
                     if (data.message && data.message.includes('Name doesn\'t match')) {
                         showError('loginFirstname', data.message);
                     } else if (data.message && data.message.includes('Sign up for an account')) {
-                        showError('loginPhone', data.message);
+                        // phone removed: show general message instead
+                        showMessage(data.message, 'error');
                         showMessage(data.message, 'error');
                     } else if (data.message && data.message.includes('Access code')) {
                         showError('loginAccessCode', data.message);
                     } else {
-                        showError('loginPhone', data.message || 'Login failed. Please try again.');
+                        showMessage(data.message || 'Login failed. Please try again.', 'error');
                     }
                     showMessage(data.message || 'Login failed. Please try again.', 'error');
                 }
             } catch (error) {
                 console.error('Login error:', error);
-                showError('loginPhone', 'Network error. Please check your connection.');
                 showMessage('Network error. Please check your connection.', 'error');
             } finally {
                 setLoading(submitBtn, false);
