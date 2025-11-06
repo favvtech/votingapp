@@ -161,6 +161,13 @@ def generate_access_code() -> str:
 def create_app() -> Flask:
     # Read environment variables
     DATABASE_URL = os.getenv("DATABASE_URL")
+    
+    # Diagnostic check for DATABASE_URL
+    if not DATABASE_URL:
+        print("⚠ DATABASE_URL not found in environment.")
+    else:
+        print(f"✅ DATABASE_URL detected: {DATABASE_URL[:40]}...")
+    
     SECRET_KEY = os.getenv("SECRET_KEY") or os.getenv("FLASK_SECRET", "dev-secret-key-change-in-production")
     FRONTEND_URL = os.getenv("FRONTEND_URL")
     FORCE_HTTPS = os.getenv("FORCE_HTTPS", "0")
