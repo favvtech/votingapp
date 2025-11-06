@@ -386,10 +386,47 @@
         }
     }
 
-    // Initialize - wait for categories to be loaded
+    // Initialize - wait for categories to be loaded, with robust dynamic loading fallback
     let retryCount = 0;
     const maxRetries = 200; // 10 seconds max wait (200 * 50ms)
     let initializationStarted = false;
+    let categoriesScriptInjected = false;
+
+    function injectCategoriesScriptOnce() {
+        if (categoriesScriptInjected) return;
+        categoriesScriptInjected = true;
+        const tried = new Set();
+        const paths = [
+            // relative from /Vote/
+            '../../data/categories.js',
+            // site-root absolute for GitHub Pages
+            (function(){
+                try {
+                    const { origin, pathname } = window.location;
+                    // Extract repo name from pathname like /votingapp/Vote/index.html
+                    const parts = pathname.split('/').filter(Boolean);
+                    const repo = parts.length > 0 ? parts[0] : '';
+                    return repo ? `${origin}/${repo}/data/categories.js` : `${origin}/data/categories.js`;
+                } catch(_){ return '/data/categories.js'; }
+            })(),
+        ];
+        paths.forEach((src) => {
+            if (tried.has(src)) return; tried.add(src);
+            const s = document.createElement('script');
+            s.src = src;
+            s.defer = true;
+            s.onload = () => {
+                if (window.CATEGORIES && Array.isArray(window.CATEGORIES) && window.CATEGORIES.length > 0) {
+                    if (!initializationStarted) {
+                        categoriesData = window.CATEGORIES.slice();
+                        initializeCategories();
+                        initializationStarted = true;
+                    }
+                }
+            };
+            document.head.appendChild(s);
+        });
+    }
     
     function waitForCategories() {
         // Check if categories are available
@@ -405,6 +442,8 @@
             setTimeout(waitForCategories, 50);
         } else {
             console.error('Categories failed to load after maximum retries');
+            // Try dynamic injection once as a last resort
+            injectCategoriesScriptOnce();
             const grid = document.getElementById('categories-grid');
             if (grid) {
                 grid.innerHTML = '<p style="text-align: center; padding: 40px; color: var(--muted);">Categories failed to load. Please refresh the page.</p>';
