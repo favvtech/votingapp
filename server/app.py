@@ -621,23 +621,44 @@ def create_app() -> Flask:
         """Check if user is logged in - supports both session cookies and header-based auth"""
         # Try session first
         if 'user_id' in session:
-            conn = get_db()
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM users WHERE id = ?", (session['user_id'],))
-            user = cursor.fetchone()
-            conn.close()
-            
-            if user:
-                return jsonify({
-                    "logged_in": True,
-                    "user": {
-                        "id": user['id'],
-                        "fullname": user['fullname'],
-                        "phone": user['phone'],
-                        "email": user['email'],
-                        "access_code": user['access_code']
-                    }
-                })
+            use_postgresql = app.config.get('USE_POSTGRESQL', False)
+            try:
+                if use_postgresql:
+                    # Use SQLAlchemy for PostgreSQL
+                    from models import db, User
+                    user = User.query.filter_by(id=session['user_id']).first()
+                    if user:
+                        return jsonify({
+                            "logged_in": True,
+                            "user": {
+                                "id": user.id,
+                                "fullname": user.fullname,
+                                "phone": user.phone,
+                                "email": user.email,
+                                "access_code": user.access_code
+                            }
+                        })
+                else:
+                    # Use SQLite
+                    conn = get_db()
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT * FROM users WHERE id = ?", (session['user_id'],))
+                    user = cursor.fetchone()
+                    conn.close()
+                    
+                    if user:
+                        return jsonify({
+                            "logged_in": True,
+                            "user": {
+                                "id": user['id'],
+                                "fullname": user['fullname'],
+                                "phone": user['phone'],
+                                "email": user['email'],
+                                "access_code": user['access_code']
+                            }
+                        })
+            except Exception as e:
+                logger.error(f"❌ Error checking session: {e}", exc_info=True)
         
         # Fallback: header-based authentication
         code = request.headers.get('X-Access-Code', '').strip()
@@ -647,7 +668,7 @@ def create_app() -> Flask:
                 code = auth.split(' ', 1)[1].strip()
         
         if code:
-            user = get_user_by_access_code(code)
+            user = get_user_by_access_code_helper(code)
             if user:
                 # Create session for future requests
                 session['user_id'] = user['id']
