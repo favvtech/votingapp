@@ -85,6 +85,28 @@ def init_db():
     conn.close()
     print("Database initialized")
 
+def load_categories_data() -> Optional[list]:
+    """Load categories array from JS file (supports both frontend/data and data paths)."""
+    try:
+        # Prefer the frontend path used by the live site
+        repo_root = os.path.dirname(os.path.dirname(__file__))
+        frontend_path = os.path.join(repo_root, 'frontend', 'data', 'categories.js')
+        legacy_path = os.path.join(repo_root, 'data', 'categories.js')
+        path = frontend_path if os.path.exists(frontend_path) else legacy_path
+        if not os.path.exists(path):
+            return None
+        with open(path, 'r', encoding='utf-8') as f:
+            text = f.read()
+        # Extract JSON array
+        start = text.find('[')
+        end = text.rfind(']')
+        if start == -1 or end == -1 or end <= start:
+            return None
+        payload = text[start:end+1]
+        return json.loads(payload)
+    except Exception:
+        return None
+
 def format_birthdate(day: int, month: int, year: int) -> str:
     """Convert day, month, year to 'DD MMM YYYY' format"""
     month_names = {
@@ -594,12 +616,57 @@ def create_app() -> Flask:
             return jsonify({"success": False, "message": "Not authenticated"}), 401
         data = request.get_json() or {}
         try:
-            category_id = int(data.get('category_id'))
-            nominee_id = int(data.get('nominee_id'))
+            category_id = int(data.get('category_id')) if data.get('category_id') is not None else None
+            nominee_id = int(data.get('nominee_id')) if data.get('nominee_id') is not None else None
         except (TypeError, ValueError):
-            return jsonify({"success": False, "message": "Invalid category or nominee"}), 400
+            category_id = None
+            nominee_id = None
 
-        if category_id <= 0 or nominee_id <= 0:
+        nominee_name = (data.get('nominee') or data.get('nominee_name') or '').strip()
+
+        if not category_id:
+            return jsonify({"success": False, "message": "Invalid category"}), 400
+
+        # Validate nominee against authoritative categories list to eliminate off-by-one errors
+        categories = load_categories_data()
+        selected = None
+        if isinstance(categories, list):
+            for c in categories:
+                if int(c.get('number', 0)) == int(category_id):
+                    selected = c
+                    break
+        if selected:
+            nominees_list = selected.get('nominees') or []
+            normalized_nominees = [str(n or '').strip().lower() for n in nominees_list]
+            normalized_name = nominee_name.strip().lower() if nominee_name else ''
+
+            # Determine the correct nominee id, prioritizing name-to-index mapping
+            if normalized_name:
+                try:
+                    name_idx = normalized_nominees.index(normalized_name)
+                    expected_id = name_idx + 1
+                    nominee_id = expected_id
+                except ValueError:
+                    # Name not found; keep existing id but we'll validate below
+                    pass
+
+            if nominee_id:
+                idx_from_id = nominee_id - 1
+                if idx_from_id < 0 or idx_from_id >= len(nominees_list):
+                    # Out of bounds -> attempt to recover via name
+                    if normalized_name and normalized_name in normalized_nominees:
+                        nominee_id = normalized_nominees.index(normalized_name) + 1
+                    else:
+                        nominee_id = None
+                elif normalized_name and normalized_name and normalized_nominees[idx_from_id] != normalized_name:
+                    # Mismatch between provided name and id -> favor the provided name to ensure accuracy
+                    if normalized_name in normalized_nominees:
+                        nominee_id = normalized_nominees.index(normalized_name) + 1
+
+        if not nominee_id or nominee_id <= 0:
+            return jsonify({"success": False, "message": "Invalid nominee"}), 400
+
+        if category_id <= 0:
             return jsonify({"success": False, "message": "Invalid identifiers"}), 400
 
         conn = get_db()

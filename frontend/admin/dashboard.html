@@ -6,8 +6,8 @@
     <title>Admin Dashboard - Voting App</title>
     
     <!-- Favicon -->
-    <link rel="icon" type="image/jpeg" href="../images/church_logo/LDS-Logo.jpeg" />
-    <link rel="apple-touch-icon" href="../images/church_logo/LDS-Logo.jpeg" />
+    <link rel="icon" type="image/jpeg" href="../images/church_logo/award.jpg" />
+    <link rel="apple-touch-icon" href="../images/church_logo/award.jpg" />
     
     <!-- Additional Meta -->
     <meta name="theme-color" content="#D4AF37" />
@@ -15,7 +15,14 @@
     
     <link rel="stylesheet" href="dashboard.css">
     <script>
-        window.API_BASE = "https://votingapp-1-jwdq.onrender.com";
+        (function() {
+            const localHosts = ["localhost", "127.0.0.1"];
+            if (localHosts.includes(window.location.hostname)) {
+                window.API_BASE = "http://127.0.0.1:5000";
+            } else {
+                window.API_BASE = "https://votingapp-1-jwdq.onrender.com";
+            }
+        })();
     </script>
 </head>
 <body>

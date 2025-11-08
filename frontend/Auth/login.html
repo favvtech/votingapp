@@ -6,8 +6,8 @@
     <title>Login / Signup - Voting App</title>
     
     <!-- Favicon -->
-    <link rel="icon" type="image/jpeg" href="../images/church_logo/LDS-Logo.jpeg" />
-    <link rel="apple-touch-icon" href="../images/church_logo/LDS-Logo.jpeg" />
+    <link rel="icon" type="image/jpeg" href="../images/church_logo/award.jpg" />
+    <link rel="apple-touch-icon" href="../images/church_logo/award.jpg" />
     
     <!-- Social Media Meta Tags -->
     <meta name="description" content="Login or sign up to participate in the 2025 Awards voting. Join Ibara YSAs for an evening of celebration and recognition." />
@@ -19,20 +19,27 @@
     <meta property="og:url" content="https://votingapp.ibaraysas.com/Auth/login.html" />
     <meta property="og:title" content="Login / Signup - 2025 Awards Voting" />
     <meta property="og:description" content="Login or sign up to participate in the 2025 Awards voting." />
-    <meta property="og:image" content="../images/church_logo/LDS-Logo.jpeg" />
+    <meta property="og:image" content="../images/church_logo/banner.jpg" />
     
     <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Login / Signup - 2025 Awards Voting" />
     <meta name="twitter:description" content="Login or sign up to participate in the 2025 Awards voting." />
-    <meta name="twitter:image" content="../images/church_logo/LDS-Logo.jpeg" />
+    <meta name="twitter:image" content="../images/church_logo/banner.jpg" />
     
     <!-- Additional Meta -->
     <meta name="theme-color" content="#D4AF37" />
     
     <link rel="stylesheet" href="login.css" />
     <script>
-        window.API_BASE = "https://votingapp-1-jwdq.onrender.com";
+        (function() {
+            const localHosts = ["localhost", "127.0.0.1"];
+            if (localHosts.includes(window.location.hostname)) {
+                window.API_BASE = "http://127.0.0.1:5000";
+            } else {
+                window.API_BASE = "https://votingapp-1-jwdq.onrender.com";
+            }
+        })();
     </script>
 </head>
 <body>

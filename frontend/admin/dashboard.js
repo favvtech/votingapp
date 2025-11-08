@@ -246,7 +246,8 @@
         
         // Fetch data for all categories
         for (const category of categoriesData) {
-            const response = await fetch(`${API_BASE}/api/categories/${category.number}/results`, {
+            const timestamp = Date.now();
+            const response = await fetch(`${API_BASE}/api/categories/${category.number}/results?t=${timestamp}`, {
                 credentials: 'include'
             });
             
@@ -346,35 +347,71 @@
     // Analytics
     async function loadAnalytics() {
         try {
+            // Force fresh fetch with cache-busting
+            const timestamp = Date.now();
             // Get total votes (available for both admin and analyst)
-            const votesResponse = await fetch(`${API_BASE}/api/admin/total-votes`, {
-                credentials: 'include'
-            });
-            const votesData = await votesResponse.json();
-            
-            if (votesData.success) {
-                document.getElementById('totalVotes').textContent = votesData.total;
+            try {
+                const votesResponse = await fetch(`${API_BASE}/api/admin/total-votes?t=${timestamp}`, {
+                    credentials: 'include'
+                });
+                if (votesResponse.ok) {
+                    const votesData = await votesResponse.json();
+                    if (votesData.success) {
+                        const totalVotesEl = document.getElementById('totalVotes');
+                        if (totalVotesEl) {
+                            totalVotesEl.textContent = votesData.total || 0;
+                        }
+                    } else {
+                        console.error('Failed to get total votes:', votesData);
+                        const totalVotesEl = document.getElementById('totalVotes');
+                        if (totalVotesEl) totalVotesEl.textContent = '0';
+                    }
+                } else {
+                    console.error('Failed to fetch total votes:', votesResponse.status);
+                    const totalVotesEl = document.getElementById('totalVotes');
+                    if (totalVotesEl) totalVotesEl.textContent = '0';
+                }
+            } catch (error) {
+                console.error('Error loading total votes:', error);
+                const totalVotesEl = document.getElementById('totalVotes');
+                if (totalVotesEl) totalVotesEl.textContent = '0';
             }
 
             // Get total users (admin only)
             if (currentRole === 'admin') {
                 try {
-                    const usersResponse = await fetch(`${API_BASE}/api/admin/users`, {
+                    const usersTimestamp = Date.now();
+                    const usersResponse = await fetch(`${API_BASE}/api/admin/users?t=${usersTimestamp}`, {
                         credentials: 'include'
                     });
-                    const usersData = await usersResponse.json();
-                    
-                    if (usersData.success) {
-                        const totalUsers = usersData.users.length;
-                        document.getElementById('totalUsers').textContent = totalUsers;
-                        allUsers = usersData.users;
+                    if (usersResponse.ok) {
+                        const usersData = await usersResponse.json();
+                        if (usersData.success && usersData.users) {
+                            const totalUsers = usersData.users.length;
+                            const totalUsersEl = document.getElementById('totalUsers');
+                            if (totalUsersEl) {
+                                totalUsersEl.textContent = totalUsers;
+                            }
+                            allUsers = usersData.users;
+                        } else {
+                            console.error('Failed to get users:', usersData);
+                            const totalUsersEl = document.getElementById('totalUsers');
+                            if (totalUsersEl) totalUsersEl.textContent = '0';
+                        }
+                    } else {
+                        console.error('Failed to fetch users:', usersResponse.status);
+                        const totalUsersEl = document.getElementById('totalUsers');
+                        if (totalUsersEl) totalUsersEl.textContent = '0';
                     }
                 } catch (error) {
                     console.error('Error loading users:', error);
+                    const totalUsersEl = document.getElementById('totalUsers');
+                    if (totalUsersEl) totalUsersEl.textContent = '0';
                 }
             } else {
                 // For analyst, show placeholder
-                document.getElementById('totalUsers').textContent = '-';
+                const totalUsersEl = document.getElementById('totalUsers');
+                if (totalUsersEl) totalUsersEl.textContent = '-';
             }
 
             // Load distribution
@@ -401,7 +438,8 @@
                 const categoryId = category.number;
                 const totalNominees = category.nominees.length;
                 
-                const response = await fetch(`${API_BASE}/api/categories/${categoryId}/results`, {
+                const timestamp = Date.now();
+                const response = await fetch(`${API_BASE}/api/categories/${categoryId}/results?t=${timestamp}`, {
                     credentials: 'include'
                 });
                 
@@ -485,7 +523,8 @@
         if (!category) return;
 
         // Fetch vote results for this category
-        const response = await fetch(`${API_BASE}/api/categories/${categoryId}/results`, {
+        const timestamp = Date.now();
+        const response = await fetch(`${API_BASE}/api/categories/${categoryId}/results?t=${timestamp}`, {
             credentials: 'include'
         });
         
@@ -493,13 +532,18 @@
         
         const data = await response.json();
         const nominees = category.nominees;
-        const voteMap = {};
-        
+        // Create a map from nominee_id (1-based) to vote count
+        const voteCountByNomineeId = {};
         data.results.forEach(r => {
-            const nomineeIndex = r.nominee_id - 1; // nominee_id is 1-based
-            if (nominees[nomineeIndex]) {
-                voteMap[nominees[nomineeIndex]] = r.votes;
-            }
+            voteCountByNomineeId[r.nominee_id] = r.votes;
+        });
+        
+        // Map nominee names to votes by iterating nominees in order
+        // nominee_id = array_index + 1 (1-based)
+        const voteMap = {};
+        nominees.forEach((nominee, index) => {
+            const nomineeId = index + 1; // Convert 0-based index to 1-based nominee_id
+            voteMap[nominee] = voteCountByNomineeId[nomineeId] || 0;
         });
 
         // Create modal content
@@ -554,16 +598,17 @@
             const allNomineesData = [];
             
             // Fetch vote data for all categories in parallel for better performance
-            const fetchPromises = categoriesData.map(category => 
-                fetch(`${API_BASE}/api/categories/${category.number}/results`, {
+            const fetchPromises = categoriesData.map(category => {
+                const timestamp = Date.now();
+                return fetch(`${API_BASE}/api/categories/${category.number}/results?t=${timestamp}`, {
                     credentials: 'include'
                 }).then(response => {
                     if (response.ok) {
                         return response.json().then(data => ({ category, data }));
                     }
                     return null;
-                }).catch(() => null)
-            );
+                }).catch(() => null);
+            });
 
             const results = await Promise.all(fetchPromises);
 
@@ -575,12 +620,21 @@
                 const nominees = category.nominees;
                 
                 if (data.results) {
+                    // Create a map from nominee_id to vote count
+                    const voteCountByNomineeId = {};
                     data.results.forEach(r => {
-                        const nomineeIndex = r.nominee_id - 1;
-                        if (nominees[nomineeIndex]) {
+                        voteCountByNomineeId[r.nominee_id] = r.votes;
+                    });
+                    
+                    // Map votes to nominee names by iterating nominees in order
+                    // nominee_id = array_index + 1 (1-based)
+                    nominees.forEach((nominee, index) => {
+                        const nomineeId = index + 1; // Convert 0-based index to 1-based nominee_id
+                        const votes = voteCountByNomineeId[nomineeId] || 0;
+                        if (votes > 0) {
                             allNomineesData.push({
-                                name: nominees[nomineeIndex],
-                                votes: r.votes
+                                name: nominee,
+                                votes: votes
                             });
                         }
                     });
@@ -694,7 +748,8 @@
     // User Management
     async function loadUsers() {
         try {
-            const response = await fetch(`${API_BASE}/api/admin/users`, {
+            const timestamp = Date.now();
+            const response = await fetch(`${API_BASE}/api/admin/users?t=${timestamp}`, {
                 credentials: 'include'
             });
             const data = await response.json();
@@ -750,8 +805,10 @@
         document.querySelectorAll('.view-votes-link').forEach(link => {
             link.addEventListener('click', (e) => {
                 e.preventDefault();
-                const userId = e.target.dataset.userId;
-                showUserDetails(userId);
+                const userId = parseInt(e.target.dataset.userId || e.target.closest('.view-votes-link')?.dataset.userId);
+                if (userId) {
+                    showUserVotesModal(userId);
+                }
             });
         });
     }
@@ -779,6 +836,101 @@
             console.error('Delete user error:', error);
             showToast('Failed to delete user', 'error');
         }
+    }
+
+    // Show user votes modal with nominee cards
+    async function showUserVotesModal(userId) {
+        const user = allUsers.find(u => u.id === userId);
+        if (!user) {
+            showToast('User not found', 'error');
+            return;
+        }
+
+        const votes = user.votes || [];
+        
+        if (votes.length === 0) {
+            const modalContent = `
+                <div class="user-votes-modal">
+                    <div class="modal-header-info">
+                        <p class="modal-info-text">${escapeHtml(user.fullname)} has not voted for any nominees yet.</p>
+                    </div>
+                    <div style="text-align: center; padding: 40px; color: var(--text-secondary);">
+                        <p>No votes found</p>
+                    </div>
+                </div>
+            `;
+            showModal(`Votes - ${escapeHtml(user.fullname)}`, modalContent);
+            return;
+        }
+
+        // Build nominee cards from votes
+        const nomineeCards = votes.map(vote => {
+            const category = categoriesData.find(c => c.number === vote.category_id);
+            if (!category) {
+                return null;
+            }
+            
+            // nominee_id is 1-based, so subtract 1 to get array index
+            const nomineeIndex = vote.nominee_id - 1;
+            const nominee = category.nominees[nomineeIndex];
+            
+            if (!nominee) {
+                return null;
+            }
+            
+            // Get first letter of nominee name for avatar
+            const firstLetter = nominee.charAt(0).toUpperCase();
+            
+            // Format vote date if available
+            let voteDate = '';
+            if (vote.created_at) {
+                try {
+                    voteDate = new Date(vote.created_at).toLocaleDateString('en-US', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric'
+                    });
+                } catch (e) {
+                    voteDate = '';
+                }
+            }
+            
+            return `
+                <div class="nominee-card-modal has-votes">
+                    <div class="nominee-avatar">${firstLetter}</div>
+                    <div class="nominee-info-modal">
+                        <div class="nominee-name-modal">${escapeHtml(nominee)}</div>
+                        <div class="nominee-category-badge">${escapeHtml(category.title)}</div>
+                        ${voteDate ? `<div class="vote-date" style="font-size: 11px; color: var(--text-muted); margin-top: 8px;">${voteDate}</div>` : ''}
+                    </div>
+                </div>
+            `;
+        }).filter(card => card !== null);
+
+        if (nomineeCards.length === 0) {
+            const modalContent = `
+                <div class="user-votes-modal">
+                    <div class="modal-header-info">
+                        <p class="modal-info-text">Unable to load vote details for ${escapeHtml(user.fullname)}.</p>
+                    </div>
+                </div>
+            `;
+            showModal(`Votes - ${escapeHtml(user.fullname)}`, modalContent);
+            return;
+        }
+
+        const modalContent = `
+            <div class="user-votes-modal">
+                <div class="modal-header-info">
+                    <p class="modal-info-text">${escapeHtml(user.fullname)} has voted for ${nomineeCards.length} ${nomineeCards.length === 1 ? 'nominee' : 'nominees'}</p>
+                </div>
+                <div class="nominees-grid">
+                    ${nomineeCards.join('')}
+                </div>
+            </div>
+        `;
+
+        showModal(`Votes - ${escapeHtml(user.fullname)}`, modalContent);
     }
 
     async function showUserDetails(userId) {
@@ -827,13 +979,32 @@
                 try {
                     const response = await fetch(`${API_BASE}/api/admin/reset-votes`, {
                         method: 'POST',
-                        credentials: 'include'
+                        credentials: 'include',
+                        headers: {
+                            'Cache-Control': 'no-cache',
+                            'Pragma': 'no-cache'
+                        }
                     });
                     const data = await response.json();
                     
                     if (data.success) {
+                        // Invalidate all vote caches
+                        try {
+                            localStorage.removeItem('vote_cache_timestamp');
+                            localStorage.removeItem('cached_votes');
+                            // Set new timestamp to force fresh fetch
+                            localStorage.setItem('vote_cache_timestamp', Date.now().toString());
+                        } catch (_) {}
+                        
                         showToast('All votes reset successfully', 'success');
+                        // Force fresh reload of analytics
                         await loadAnalytics();
+                        
+                        // Trigger page reload for all open tabs (via storage event)
+                        try {
+                            localStorage.setItem('votes_reset', Date.now().toString());
+                            localStorage.removeItem('votes_reset');
+                        } catch (_) {}
                     } else {
                         showToast(data.message || 'Failed to reset votes', 'error');
                     }
@@ -1158,8 +1329,18 @@
             } catch (error) {
                 console.error('Logout error:', error);
             }
-            sessionStorage.removeItem('admin_role');
-            window.location.href = 'login.html';
+            
+            // Clear admin-related storage
+            try {
+                sessionStorage.removeItem('admin_role');
+                sessionStorage.removeItem('admin_code');
+                localStorage.removeItem('vote_cache_timestamp');
+                localStorage.removeItem('cached_votes');
+                localStorage.removeItem('votes_reset');
+            } catch (_) {}
+            
+            // Use replace to prevent back button from restoring state
+            window.location.replace('login.html');
         });
     }
 

@@ -83,7 +83,7 @@ window.CATEGORIES = [
     title: "BEST DRESSED FEMALE",
     nominees: [
       "Veronica Akinwande",
-      "Ochigbo Precious Titi",
+      "Precious Ochigbo",
       "Thomas Tunmise",
       "Adebimpe Gbadebo",
       "Justina Samuel",
@@ -109,7 +109,7 @@ window.CATEGORIES = [
       "Ememekwe Emmanuel Chidera",
       "Eric Agwa",
       "Ibrahim Fabolude",
-      "Love Ayjnde Feyisola",
+      "Love Ayinde Feyisola",
       "Thomas Tunmise",
       "Confidence Felix",
       "Samuel Nasir",
@@ -120,7 +120,7 @@ window.CATEGORIES = [
     number: 10,
     title: "LEADERSHIP APPRECIATION AWARD",
     nominees: [
-      "Olubisi Olasunkanmi Olamilekan",
+      "Olubisi Olamilekan",
       "Elisha Okon Maurice",
       "Abraham Suleiman",
       "Adeosun O. King",

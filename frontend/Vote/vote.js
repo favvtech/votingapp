@@ -3,11 +3,162 @@
     const API_BASE = (typeof window !== 'undefined' && window.API_BASE) || window.location.origin;
     let categoriesData = [];
 
+    /**
+     * Normalize a name for matching with image filenames
+     * Converts "Jola Ade" to "jola-ade" (lowercase, spaces to hyphens)
+     */
+    function normalizeNameForMatching(name) {
+        return name
+            .toLowerCase()
+            .trim()
+            .replace(/\s+/g, '-')  // Replace spaces with hyphens
+            .replace(/[^a-z0-9-]/g, '');  // Remove special characters except hyphens
+    }
+
+    /**
+     * Find matching image for a nominee name
+     * Checks for exact match first, then tries variations
+     * Returns image path or null if not found
+     */
+    function findNomineeImage(nomineeName) {
+        if (!nomineeName) return null;
+        
+        // List of available image filenames (without extensions)
+        // This avoids needing to fetch directory listings
+        // Updated to match all actual image files in frontend/images/category1/
+        const availableImages = [
+            'abel-ehiaguina',
+            'adenekan-kehinde-adedamola',
+            'adeniran-hallelujah',
+            'adeosun-o-king',
+            'akinwunmi-kehinde',
+            'ayepe-vanessa',
+            'balogun-oluwatosin',
+            'bamidele-michael',
+            'blessing-obaji',
+            'bukola-ajisafe',
+            'confidence-felix',
+            'dauda-musa-marvelous',
+            'duthen-funmilayo',
+            'elisha-okon-maurice',
+            'ememekwe-emmanuel-chidera',
+            'emmanuel-nasir',
+            'eniola-ayinde',
+            'favour-odey',
+            'gamsheya-ezra-lumsunya',
+            'gbadebo-elizabeth',
+            'ibrahim-fabolude',
+            'ijeoma-nwabueze',
+            'joseph-abiodun-wasiu',
+            'joy-essiet',
+            'joy-ford-adaku',
+            'justina-samuel',
+            'love-ayinde-feyisola',
+            'momoh-precious',
+            'ochigbo-precious',
+            'ogbor-edward-nnamdi',
+            'olubisi-olasunkanmi-olamilekan',
+            'oreoluwa-adebiyi',
+            'peter-prosperity-sunday',
+            'richard-gbadamashi',
+            'richard-olawepo',
+            'ruth-mbonu',
+            'samson-obaji',
+            'samuel-nasir',
+            'suleiman-abraham',
+            'tajudeen-abiodun',
+            'thomas-tunmise',
+            'veronica-akinwande',
+            'victor-nweze',
+            'victory-igein',
+            'zion-ita-udong-abasi'
+        ];
+
+        const normalizedName = normalizeNameForMatching(nomineeName);
+        let matchedFilename = null;
+        
+        // Try exact match first
+        if (availableImages.includes(normalizedName)) {
+            matchedFilename = normalizedName;
+        } else {
+            // Extract name parts for better matching (handles reversed order)
+            const nameParts = normalizedName.split('-').filter(p => p.length > 0);
+            
+            // Try fuzzy matching with multiple strategies
+            let bestMatch = null;
+            let bestScore = 0;
+            
+            for (const img of availableImages) {
+                const imgParts = img.split('-').filter(p => p.length > 0);
+                let score = 0;
+                
+                // Strategy 1: Check if all name parts exist in image (handles reversed order)
+                const allPartsMatch = nameParts.every(part => 
+                    imgParts.some(imgPart => imgPart.includes(part) || part.includes(imgPart))
+                );
+                
+                // Strategy 2: Check if image contains nominee name or vice versa
+                const containsMatch = img.includes(normalizedName) || normalizedName.includes(img);
+                
+                // Strategy 3: Check if significant parts match (first and last name parts)
+                const firstPartMatch = nameParts.length > 0 && imgParts.some(ip => 
+                    ip.includes(nameParts[0]) || nameParts[0].includes(ip)
+                );
+                const lastPartMatch = nameParts.length > 1 && imgParts.some(ip => 
+                    ip.includes(nameParts[nameParts.length - 1]) || nameParts[nameParts.length - 1].includes(ip)
+                );
+                
+                // Calculate score
+                if (allPartsMatch && nameParts.length === imgParts.length) {
+                    score = 100; // Perfect match
+                } else if (allPartsMatch) {
+                    score = 80; // All parts match but different length
+                } else if (containsMatch) {
+                    score = 60; // Contains match
+                } else if (firstPartMatch && lastPartMatch) {
+                    score = 40; // First and last match
+                } else if (firstPartMatch || lastPartMatch) {
+                    score = 20; // Partial match
+                }
+                
+                // Prefer longer matches for same score
+                if (score > bestScore || (score === bestScore && img.length > (bestMatch?.length || 0))) {
+                    bestScore = score;
+                    bestMatch = img;
+                }
+            }
+            
+            // Only use match if score is reasonable (at least 20)
+            if (bestMatch && bestScore >= 20) {
+                matchedFilename = bestMatch;
+            }
+        }
+        
+        if (matchedFilename) {
+            // Return jpg path (all images in category1 are .jpg based on file listing)
+            return `../images/category1/${matchedFilename}.jpg`;
+        }
+        
+        return null;
+    }
+
+    /**
+     * Generate placeholder image if no real image is found
+     */
     function generatePlaceholderImage(name) {
         const colors = ['#c9a227', '#b38a10', '#8b6914', '#6b4f0a'];
         const hash = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
         const color = colors[hash % colors.length];
         return `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><circle cx="60" cy="60" r="60" fill="${color}"/><text x="60" y="70" font-family="Arial" font-size="40" font-weight="bold" fill="white" text-anchor="middle">${name.charAt(0).toUpperCase()}</text></svg>`)}`;
+    }
+
+    /**
+     * Get the best image source for a nominee
+     * Returns real image path if found, otherwise placeholder
+     */
+    function getNomineeImageSrc(nomineeName) {
+        const realImage = findNomineeImage(nomineeName);
+        return realImage || generatePlaceholderImage(nomineeName);
     }
 
     const categoryImageMap = {
@@ -65,15 +216,24 @@
             </div>
             <div class="category-content">
                 <div class="nominees-list">
-                    ${category.nominees.map((nominee, idx) => `
+                    ${category.nominees.map((nominee, idx) => {
+                        const imageSrc = getNomineeImageSrc(nominee);
+                        const isRealImage = imageSrc.startsWith('../images/');
+                        return `
                         <div class="nominee-card">
-                            <img src="${generatePlaceholderImage(nominee)}" alt="${nominee}" class="nominee-image" />
+                            <img 
+                                src="${imageSrc}" 
+                                alt="${nominee}" 
+                                class="nominee-image ${isRealImage ? 'nominee-image-real' : 'nominee-image-placeholder'}"
+                                onerror="this.onerror=null; this.src='${generatePlaceholderImage(nominee)}'; this.classList.remove('nominee-image-real'); this.classList.add('nominee-image-placeholder');"
+                            />
                             <div class="nominee-name">${nominee}</div>
-                            <button class="vote-btn" data-nominee="${nominee}" data-nominee-index="${idx}" data-category="${category.number}">
+                            <button class="vote-btn" data-nominee="${nominee}" data-nominee-index="${idx}" data-nominee-id="${idx + 1}" data-category="${category.number}">
                                 Vote
                             </button>
                         </div>
-                    `).join('')}
+                    `;
+                    }).join('')}
                 </div>
             </div>
         `;
@@ -98,7 +258,7 @@
     }
 
     let categoriesInitialized = false;
-    
+
     function initializeCategories() {
         // Prevent multiple initializations
         if (categoriesInitialized) {
@@ -170,14 +330,14 @@
                 const nomineeName = btn.dataset.nominee;
                 const categoryId = Number(btn.dataset.category);
                 const nomineeIdx = Number(btn.dataset.nomineeIndex);
+                const nomineeIdForBackend = Number(btn.dataset.nomineeId);
 
                 // Prevent voting if already voted in this category
                 if (btn.classList.contains('voted')) return;
                 if (btn.getAttribute('data-locked') === 'true') return;
                 if (btn.hasAttribute('disabled')) return;
 
-                // Convert 0-based index to 1-based for backend (backend expects 1-based indices)
-                const nomineeIdForBackend = nomineeIdx + 1;
+                // nomineeIdForBackend is precomputed in the DOM to avoid any off-by-one issues
 
                 // Validate values before sending
                 if (isNaN(categoryId) || isNaN(nomineeIdForBackend) || categoryId <= 0 || nomineeIdForBackend <= 0) {
@@ -208,7 +368,12 @@
                         method: 'POST',
                         headers,
                         credentials: 'include',
-                        body: JSON.stringify({ category_id: categoryId, nominee_id: nomineeIdForBackend })
+                        body: JSON.stringify({
+                            category_id: categoryId,
+                            nominee_id: nomineeIdForBackend,
+                            nominee_name: nomineeName,
+                            nominee_index: nomineeIdx
+                        })
                     });
                     if (resp.status === 401) {
                         // Not logged in – show clear feedback and send to login
@@ -245,6 +410,11 @@
                     // Success – mark as voted in UI and keep category open
                     markCategoryVoted(categoryId, nomineeName, nomineeIdx);
                     
+                    // Invalidate cache to ensure fresh data on next fetch
+                    try {
+                        localStorage.removeItem('vote_cache_timestamp');
+                    } catch(_) {}
+                    
                     // Ensure the category stays open after voting
                     const categoryCard = document.querySelector(`.category-card[data-category-id="${categoryId}"]`);
                     if (categoryCard && !categoryCard.classList.contains('is-open')) {
@@ -259,7 +429,21 @@
         }
 
         // On load, disable categories already voted by this user
-        refreshMyVotes();
+        // Force fresh fetch on page load to ensure we have latest data
+        refreshMyVotes(true);
+        
+        // Listen for vote reset events from admin dashboard (cross-tab communication)
+        window.addEventListener('storage', (e) => {
+            if (e.key === 'votes_reset' || e.key === 'vote_cache_timestamp') {
+                // Votes were reset, force fresh fetch
+                refreshMyVotes(true);
+            }
+        });
+        
+        // Also listen for focus events to refresh when tab becomes active
+        window.addEventListener('focus', () => {
+            refreshMyVotes(true);
+        });
         
         // Mark as initialized
         categoriesInitialized = true;
@@ -285,8 +469,18 @@
             }
         });
     }
-    async function refreshMyVotes(){
+    async function refreshMyVotes(forceFresh = false){
         try {
+            // Check cache timestamp - if votes were reset, force fresh fetch
+            const cacheTimestamp = localStorage.getItem('vote_cache_timestamp');
+            const lastReset = localStorage.getItem('votes_reset');
+            if (lastReset || forceFresh || !cacheTimestamp) {
+                // Force fresh fetch - clear any cached data
+                try {
+                    localStorage.removeItem('cached_votes');
+                } catch(_) {}
+            }
+            
             const headers = {};
             try {
                 const storedUser = JSON.parse(localStorage.getItem('user') || 'null');
@@ -297,23 +491,41 @@
                     if (altCode) headers['X-Access-Code'] = altCode;
                 }
             } catch(_) {}
-            const resp = await fetch(`${API_BASE}/api/my-votes`, { 
+            
+            // Add timestamp to prevent caching
+            const timestamp = Date.now();
+            const resp = await fetch(`${API_BASE}/api/my-votes?t=${timestamp}`, { 
                 credentials: 'include', 
-                headers 
+                headers
             });
-            if (!resp.ok) return;
+            if (!resp.ok) {
+                console.warn('Failed to fetch votes:', resp.status);
+                return;
+            }
             const data = await resp.json();
-            if (!data || !data.success) return;
-            (data.votes || []).forEach(v => {
+            if (!data || !data.success) {
+                console.warn('Invalid vote data response:', data);
+                return;
+            }
+            
+            // Update cache timestamp
+            try {
+                localStorage.setItem('vote_cache_timestamp', Date.now().toString());
+            } catch(_) {}
+            
+            // Mark all voted categories
+            if (data.votes && Array.isArray(data.votes)) {
+                data.votes.forEach(v => {
                 const cid = Number(v.category_id);
-                const backendNomineeId = Number(v.nominee_id); // This is 1-based from backend
-                // Convert 1-based backend ID to 0-based frontend index
-                const frontendNomineeIdx = backendNomineeId - 1;
+                    const backendNomineeId = Number(v.nominee_id); // This is 1-based from backend
+                    // Convert 1-based backend ID to 0-based frontend index
+                    const frontendNomineeIdx = backendNomineeId - 1;
                 // resolve nominee name via DOM dataset or through index
-                markCategoryVoted(cid, undefined, frontendNomineeIdx);
+                    markCategoryVoted(cid, undefined, frontendNomineeIdx);
             });
+            }
         } catch (e) {
-            // ignore
+            console.error('Error refreshing votes:', e);
         }
     }
 
@@ -462,7 +674,7 @@
             // Update categoriesData with the loaded categories
             categoriesData = window.CATEGORIES.slice();
             console.log(`Loaded ${categoriesData.length} categories`);
-            initializeCategories();
+    initializeCategories();
             initializationStarted = true;
         } else if (retryCount < maxRetries) {
             retryCount++;

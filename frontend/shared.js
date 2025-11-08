@@ -189,12 +189,35 @@
     }
 
     async function init() {
+        // Handle browser back/forward navigation - always verify session
+        window.addEventListener('pageshow', async (e) => {
+            if (e.persisted) {
+                // Page was loaded from cache (back/forward button)
+                // Force fresh session check and clear stale data
+                const user = await checkAuthStatus();
+                if (!user) {
+                    try {
+                        localStorage.removeItem('user');
+                        localStorage.removeItem('user_access_code');
+                        localStorage.removeItem('vote_cache_timestamp');
+                        localStorage.removeItem('cached_votes');
+                        sessionStorage.clear();
+                    } catch (_) {}
+                    updateNavigation(false);
+                    const ac = document.getElementById('accessCodeCircle');
+                    if (ac) ac.remove();
+                }
+            }
+        });
+        
         const user = await checkAuthStatus();
         // If not logged in, hard-clear any stale local client state and UI
         if (!user) {
             try {
                 localStorage.removeItem('user');
                 localStorage.removeItem('user_access_code');
+                localStorage.removeItem('vote_cache_timestamp');
+                localStorage.removeItem('cached_votes');
             } catch (_) {}
             const ac = document.getElementById('accessCodeCircle');
             if (ac) ac.remove();
@@ -262,11 +285,22 @@
         try {
             await fetch(`${API_BASE}/api/logout`, { method: 'POST', credentials: 'include' });
         } catch (_) {}
-        localStorage.removeItem('user');
-        localStorage.removeItem('user_access_code');
+        
+        // Clear user-related storage (but preserve theme and other non-user data)
+        try {
+            localStorage.removeItem('user');
+            localStorage.removeItem('user_access_code');
+            localStorage.removeItem('vote_cache_timestamp');
+            localStorage.removeItem('cached_votes');
+            localStorage.removeItem('votes_reset');
+            sessionStorage.clear();
+        } catch (_) {}
+        
         updateNavigation(false);
         const { homeHref } = getPaths();
-        window.location.href = homeHref;
+        
+        // Use replace to prevent back button from restoring state
+        window.location.replace(homeHref);
     }
 
     // Expose for external use

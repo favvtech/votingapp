@@ -1066,6 +1066,18 @@ body {
     word-break: break-word;
 }
 
+.nominee-category-badge {
+    font-size: 11px;
+    color: var(--text-secondary);
+    background: var(--bg);
+    padding: 4px 8px;
+    border-radius: 4px;
+    display: inline-block;
+    margin-top: 4px;
+    font-weight: 500;
+    border: 1px solid var(--border-light);
+}
+
 .nominee-votes-modal {
     display: flex;
     align-items: baseline;
@@ -1485,11 +1497,18 @@ body {
 
 .view-votes-link {
     color: var(--primary);
+    font-weight: 600;
     text-decoration: none;
-    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: inline-block;
+    padding: 2px 4px;
+    border-radius: 4px;
 }
 
 .view-votes-link:hover {
+    color: var(--primary-dark);
+    background: var(--primary-light);
     text-decoration: underline;
 }
 

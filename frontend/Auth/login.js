@@ -508,6 +508,13 @@
 
                 if (response.ok && data.success) {
                     showMessage(data.message || 'Login successful! Redirecting...', 'success');
+                    // Clear any stale vote cache on fresh login
+                    try {
+                        localStorage.removeItem('vote_cache_timestamp');
+                        localStorage.removeItem('cached_votes');
+                        localStorage.removeItem('votes_reset');
+                    } catch (_) {}
+                    
                     // Store user data in localStorage for frontend access
                     if (data.user) {
                         localStorage.setItem('user', JSON.stringify(data.user));
@@ -517,9 +524,9 @@
                             showAccessCode(data.user.access_code);
                         }
                     }
-                    // Redirect to Vote page after short delay
+                    // Redirect to Vote page after short delay - use replace to prevent back button issues
                     setTimeout(() => {
-                        window.location.href = '../Vote/index.html';
+                        window.location.replace('../Vote/index.html');
                     }, 1500);
                 } else {
                     if (data.message && data.message.includes('Name doesn\'t match')) {
@@ -638,6 +645,13 @@
 
                 if (response.ok && data.success) {
                     showMessage(data.message || 'Account created successfully! Redirecting...', 'success');
+                    // Clear any stale vote cache on fresh signup
+                    try {
+                        localStorage.removeItem('vote_cache_timestamp');
+                        localStorage.removeItem('cached_votes');
+                        localStorage.removeItem('votes_reset');
+                    } catch (_) {}
+                    
                     // Store user data in localStorage
                     if (data.user) {
                         localStorage.setItem('user', JSON.stringify(data.user));
@@ -647,9 +661,9 @@
                             showAccessCode(data.user.access_code);
                         }
                     }
-                    // Redirect to Vote page after short delay
+                    // Redirect to Vote page after short delay - use replace to prevent back button issues
                     setTimeout(() => {
-                        window.location.href = '../Vote/index.html';
+                        window.location.replace('../Vote/index.html');
                     }, 3000); // Give time to see access code
                 } else {
                     if (data.message && data.message.includes("Can't Sign Up")) {
@@ -687,9 +701,14 @@
             const data = await response.json();
 
             if (data.logged_in && data.user) {
-                // User is logged in, redirect to Vote page
+                // User is logged in, clear stale cache and redirect to Vote page
+                try {
+                    localStorage.removeItem('vote_cache_timestamp');
+                    localStorage.removeItem('cached_votes');
+                    localStorage.removeItem('votes_reset');
+                } catch (_) {}
                 localStorage.setItem('user', JSON.stringify(data.user));
-                window.location.href = '../Vote/index.html';
+                window.location.replace('../Vote/index.html');
             }
         } catch (error) {
             console.error('Session check error:', error);

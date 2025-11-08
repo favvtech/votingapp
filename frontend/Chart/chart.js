@@ -34,17 +34,27 @@
   async function fetchCategoryResults(categoryIndex){
     const categoryId = Number(categoryIndex) + 1; // backend uses 1-based ids
     try {
-      const resp = await fetch(`${API_BASE}/api/categories/${categoryId}/results`, { credentials: 'include' });
+      // Force fresh fetch with cache-busting
+      const timestamp = Date.now();
+      const resp = await fetch(`${API_BASE}/api/categories/${categoryId}/results?t=${timestamp}`, { 
+        credentials: 'include'
+      });
       if (!resp.ok) return;
       const data = await resp.json();
       // Build mapping name -> votes for this category
       const names = nomineesByCategory[categoryIndex] || [];
       const counts = Object.create(null);
       names.forEach(n => counts[n] = 0);
+      // Create a map from nominee_id (1-based) to vote count
+      const voteCountByNomineeId = {};
       (data.results || []).forEach(r => {
-        const idx = Number(r.nominee_id);
-        const name = names[idx];
-        if (name) counts[name] = Number(r.votes) || 0;
+        voteCountByNomineeId[r.nominee_id] = Number(r.votes) || 0;
+      });
+      // Map votes to nominee names by iterating names in order
+      // nominee_id = array_index + 1 (1-based)
+      names.forEach((name, index) => {
+        const nomineeId = index + 1; // Convert 0-based index to 1-based nominee_id
+        counts[name] = voteCountByNomineeId[nomineeId] || 0;
       });
       // Update Y-axis scaling only when a vote exceeds currentMax
       const localMax = Math.max(0, ...Object.values(counts));
@@ -60,10 +70,39 @@
   let pollTimer = null;
   function startPolling(categoryIndex){
     if (pollTimer) clearInterval(pollTimer);
-    // immediate fetch
+    // immediate fetch with fresh data
     fetchCategoryResults(categoryIndex);
     pollTimer = setInterval(()=> fetchCategoryResults(categoryIndex), 2000);
   }
+  
+  // Listen for vote reset events from admin dashboard (cross-tab communication)
+  window.addEventListener('storage', (e) => {
+    if (e.key === 'votes_reset' || e.key === 'vote_cache_timestamp') {
+      // Votes were reset, refresh current category if polling
+      if (pollTimer) {
+        const categorySelect = document.getElementById('category');
+        if (categorySelect) {
+          const currentIndex = categorySelect.selectedIndex;
+          if (currentIndex >= 0) {
+            fetchCategoryResults(currentIndex);
+          }
+        }
+      }
+    }
+  });
+  
+  // Also refresh when tab becomes active
+  window.addEventListener('focus', () => {
+    if (pollTimer) {
+      const categorySelect = document.getElementById('category');
+      if (categorySelect) {
+        const currentIndex = categorySelect.selectedIndex;
+        if (currentIndex >= 0) {
+          fetchCategoryResults(currentIndex);
+        }
+      }
+    }
+  });
 
   function buildOptions(){
     const sel = document.getElementById('category');

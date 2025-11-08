@@ -6,8 +6,8 @@
     <title>VotingApp • Vote</title>
     
     <!-- Favicon -->
-    <link rel="icon" type="image/jpeg" href="../images/church_logo/LDS-Logo.jpeg" />
-    <link rel="apple-touch-icon" href="../images/church_logo/LDS-Logo.jpeg" />
+    <link rel="icon" type="image/jpeg" href="../images/church_logo/award.jpg" />
+    <link rel="apple-touch-icon" href="../images/church_logo/award.jpg" />
     
     <!-- Social Media Meta Tags -->
     <meta name="description" content="Vote for your favorite nominees in the 2025 Awards. Select a category and cast your vote to support excellence and achievement." />
@@ -19,7 +19,7 @@
     <meta property="og:url" content="https://votingapp.ibaraysas.com/Vote/" />
     <meta property="og:title" content="2025 Awards Voting - Ibara YSAs" />
     <meta property="og:description" content="Vote for your favorite nominees in the 2025 Awards. Select a category and cast your vote." />
-    <meta property="og:image" content="../images/church_logo/LDS-Logo.jpeg" />
+    <meta property="og:image" content="../images/church_logo/banner.jpg" />
     <meta property="og:site_name" content="Ibara YSAs Voting App" />
     
     <!-- Twitter -->
@@ -27,7 +27,7 @@
     <meta name="twitter:url" content="https://votingapp.ibaraysas.com/Vote/" />
     <meta name="twitter:title" content="2025 Awards Voting - Ibara YSAs" />
     <meta name="twitter:description" content="Vote for your favorite nominees in the 2025 Awards." />
-    <meta name="twitter:image" content="../images/church_logo/LDS-Logo.jpeg" />
+    <meta name="twitter:image" content="../images/church_logo/banner.jpg" />
     
     <!-- Additional Meta -->
     <meta name="theme-color" content="#D4AF37" />
@@ -35,7 +35,14 @@
     
     <link rel="stylesheet" href="vote.css" />
     <script>
-        window.API_BASE = "https://votingapp-1-jwdq.onrender.com";
+        (function() {
+            const localHosts = ["localhost", "127.0.0.1"];
+            if (localHosts.includes(window.location.hostname)) {
+                window.API_BASE = "http://127.0.0.1:5000";
+            } else {
+                window.API_BASE = "https://votingapp-1-jwdq.onrender.com";
+            }
+        })();
     </script>
 </head>
 <body>
@@ -161,7 +168,6 @@
         <div class="footer-logos">
             <div class="logo-container">
                 <img src="../images/church_logo/pathway_logo.jpeg" alt="Pathway Logo" class="footer-logo pathway-logo" />
-                <img src="../images/church_logo/LDS-Logo.jpeg" alt="LDS Logo" class="footer-logo lds-logo" />
                 <img src="../images/church_logo/ensign_college.jpg" alt="Ensign College Logo" class="footer-logo ensign-logo" />
             </div>
         </div>
