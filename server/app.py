@@ -186,9 +186,9 @@ def create_app() -> Flask:
     
     # Diagnostic check for DATABASE_URL
     if not DATABASE_URL:
-        print("⚠ DATABASE_URL not found in environment.")
+        logger.warning("⚠ DATABASE_URL not found in environment.")
     else:
-        print(f"✅ DATABASE_URL detected: {DATABASE_URL[:40]}...")
+        logger.info(f"✅ DATABASE_URL detected: {DATABASE_URL[:40]}...")
     
     SECRET_KEY = os.getenv("SECRET_KEY") or os.getenv("FLASK_SECRET", "dev-secret-key-change-in-production")
     FRONTEND_URL = os.getenv("FRONTEND_URL")
@@ -199,8 +199,11 @@ def create_app() -> Flask:
     app = Flask(__name__)
     app.secret_key = SECRET_KEY
     
+    # Store DATABASE_URL in app config for access in routes
+    app.config['DATABASE_URL'] = DATABASE_URL
+    app.config['USE_POSTGRESQL'] = bool(DATABASE_URL)
+    
     # Database configuration
-    # TODO: Full migration to SQLAlchemy - currently using SQLite fallback
     # If DATABASE_URL is set (PostgreSQL), configure SQLAlchemy
     # Otherwise, use existing SQLite implementation (get_db function)
     if DATABASE_URL:
@@ -211,13 +214,15 @@ def create_app() -> Flask:
             app.config["SQLALCHEMY_DATABASE_URI"] = db_url
             app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
             db.init_app(app)
-            logger.info("SQLAlchemy configured with PostgreSQL")
+            logger.info("✅ SQLAlchemy configured with PostgreSQL")
         except Exception as e:
-            logger.error(f"Failed to configure SQLAlchemy: {e}")
-            logger.warning("Falling back to SQLite")
+            logger.error(f"❌ Failed to configure SQLAlchemy: {e}")
+            logger.warning("⚠ Falling back to SQLite")
+            app.config['USE_POSTGRESQL'] = False
     else:
         # Fallback to SQLite for local development
-        logger.info("Using SQLite for local development")
+        logger.info("ℹ Using SQLite for local development")
+        app.config['USE_POSTGRESQL'] = False
     
     # Session cookie configuration
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax" if not is_production else "None"
@@ -669,41 +674,65 @@ def create_app() -> Flask:
         if category_id <= 0:
             return jsonify({"success": False, "message": "Invalid identifiers"}), 400
 
-        conn = get_db()
-        cur = conn.cursor()
+        use_postgresql = app.config.get('USE_POSTGRESQL', False)
         try:
-            cur.execute(
-                "INSERT OR IGNORE INTO votes (user_id, category_id, nominee_id) VALUES (?, ?, ?)",
-                (user_id, category_id, nominee_id)
-            )
-            if cur.rowcount == 0:
-                # User already voted in this category
+            if use_postgresql:
+                # Use SQLAlchemy for PostgreSQL
+                from models import db, Vote
+                # Check if vote already exists
+                existing = Vote.query.filter_by(user_id=user_id, category_id=category_id).first()
+                if existing:
+                    return jsonify({"success": False, "message": "You have already voted in this category"}), 409
+                # Create new vote
+                new_vote = Vote(user_id=user_id, category_id=category_id, nominee_id=nominee_id)
+                db.session.add(new_vote)
+                db.session.commit()
+                logger.info(f"✅ Vote recorded: user {user_id}, category {category_id}, nominee {nominee_id}")
+                return jsonify({"success": True, "message": "Vote recorded"}), 201
+            else:
+                # Use SQLite
+                conn = get_db()
+                cur = conn.cursor()
+                cur.execute(
+                    "INSERT OR IGNORE INTO votes (user_id, category_id, nominee_id) VALUES (?, ?, ?)",
+                    (user_id, category_id, nominee_id)
+                )
+                if cur.rowcount == 0:
+                    # User already voted in this category
+                    conn.close()
+                    return jsonify({"success": False, "message": "You have already voted in this category"}), 409
+                conn.commit()
                 conn.close()
-                return jsonify({"success": False, "message": "You have already voted in this category"}), 409
-            conn.commit()
-            conn.close()
-            return jsonify({"success": True, "message": "Vote recorded"}), 201
+                logger.info(f"✅ Vote recorded: user {user_id}, category {category_id}, nominee {nominee_id}")
+                return jsonify({"success": True, "message": "Vote recorded"}), 201
         except Exception as e:
-            conn.close()
-            return jsonify({"success": False, "message": "Failed to record vote"}), 500
+            logger.error(f"❌ Error recording vote: {e}", exc_info=True)
+            if use_postgresql:
+                try:
+                    from models import db
+                    db.session.rollback()
+                except:
+                    pass
+            return jsonify({"success": False, "message": f"Failed to record vote: {str(e)}"}), 500
 
     @app.get("/api/categories/<int:category_id>/results")
     def category_results(category_id: int):
         """Return tallies per nominee for a category"""
         try:
-            if DATABASE_URL:
+            use_postgresql = app.config.get('USE_POSTGRESQL', False)
+            if use_postgresql:
                 # Use SQLAlchemy for PostgreSQL
                 from models import db, Vote
                 from sqlalchemy import func
-                with app.app_context():
-                    results_data = db.session.query(
-                        Vote.nominee_id, 
-                        func.count(Vote.id).label('votes')
-                    ).filter(
-                        Vote.category_id == category_id
-                    ).group_by(Vote.nominee_id).all()
-                    results = [{"nominee_id": r[0], "votes": r[1]} for r in results_data]
-                    return jsonify({"category_id": category_id, "results": results})
+                results_data = db.session.query(
+                    Vote.nominee_id, 
+                    func.count(Vote.id).label('votes')
+                ).filter(
+                    Vote.category_id == category_id
+                ).group_by(Vote.nominee_id).all()
+                results = [{"nominee_id": r[0], "votes": r[1]} for r in results_data]
+                logger.debug(f"✅ Category {category_id} results from PostgreSQL: {len(results)} nominees")
+                return jsonify({"category_id": category_id, "results": results})
             else:
                 # Use SQLite
                 conn = get_db()
@@ -715,9 +744,10 @@ def create_app() -> Flask:
                 rows = cur.fetchall()
                 conn.close()
                 results = [{"nominee_id": r[0], "votes": r[1]} for r in rows]
+                logger.debug(f"✅ Category {category_id} results from SQLite: {len(results)} nominees")
                 return jsonify({"category_id": category_id, "results": results})
         except Exception as e:
-            logger.error(f"Error getting category results: {e}")
+            logger.error(f"❌ Error getting category results: {e}", exc_info=True)
             return jsonify({"category_id": category_id, "results": []})
 
     @app.get("/api/my-votes")
@@ -726,91 +756,119 @@ def create_app() -> Flask:
         user_id = authenticate_request()
         if not user_id:
             return jsonify({"success": False, "message": "Not authenticated"}), 401
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT category_id, nominee_id, created_at FROM votes WHERE user_id = ?",
-            (user_id,)
-        )
-        rows = cur.fetchall()
-        conn.close()
-        votes = [
-            {"category_id": r[0], "nominee_id": r[1], "created_at": r[2]}
-            for r in rows
-        ]
-        return jsonify({"success": True, "votes": votes})
+        
+        try:
+            use_postgresql = app.config.get('USE_POSTGRESQL', False)
+            if use_postgresql:
+                # Use SQLAlchemy for PostgreSQL
+                from models import db, Vote
+                votes_query = Vote.query.filter_by(user_id=user_id).all()
+                votes = [
+                    {
+                        "category_id": vote.category_id,
+                        "nominee_id": vote.nominee_id,
+                        "created_at": vote.created_at.isoformat() if vote.created_at else None
+                    }
+                    for vote in votes_query
+                ]
+                return jsonify({"success": True, "votes": votes})
+            else:
+                # Use SQLite
+                conn = get_db()
+                cur = conn.cursor()
+                cur.execute(
+                    "SELECT category_id, nominee_id, created_at FROM votes WHERE user_id = ?",
+                    (user_id,)
+                )
+                rows = cur.fetchall()
+                conn.close()
+                votes = [
+                    {"category_id": r[0], "nominee_id": r[1], "created_at": r[2]}
+                    for r in rows
+                ]
+                return jsonify({"success": True, "votes": votes})
+        except Exception as e:
+            logger.error(f"❌ Error getting user votes: {e}", exc_info=True)
+            return jsonify({"success": False, "message": "Failed to get votes"}), 500
 
     # Admin/Analyst Access Codes
     ADMIN_CODE = "B1E5Z0"  # 3 letters + 3 numbers (mixed)
     ANALYST_CODE = "HANS13"  # 4 letters + 2 numbers
     
-    # Database helper - use SQLAlchemy if DATABASE_URL is set, otherwise SQLite
+    # Database helper - use SQLAlchemy if PostgreSQL is configured, otherwise SQLite
     def get_users_with_votes():
         """Get all users with their votes - works with both PostgreSQL and SQLite"""
-        if DATABASE_URL:
+        use_postgresql = app.config.get('USE_POSTGRESQL', False)
+        
+        if use_postgresql:
             # Use SQLAlchemy for PostgreSQL
             try:
                 from models import db, User, Vote
-                with app.app_context():
-                    users = User.query.order_by(User.created_at.desc()).all()
-                    users_with_votes = []
-                    for user in users:
-                        votes = Vote.query.filter_by(user_id=user.id).all()
-                        users_with_votes.append({
-                            "id": user.id,
-                            "fullname": user.fullname,
-                            "email": user.email,
-                            "phone": user.phone,
-                            "country_code": user.country_code,
-                            "access_code": user.access_code,
-                            "birthdate": user.birthdate,
-                            "created_at": user.created_at.isoformat() if user.created_at else None,
-                            "votes": [
-                                {
-                                    "category_id": vote.category_id,
-                                    "nominee_id": vote.nominee_id,
-                                    "created_at": vote.created_at.isoformat() if vote.created_at else None
-                                }
-                                for vote in votes
-                            ]
-                        })
-                    return users_with_votes
+                users = User.query.order_by(User.created_at.desc()).all()
+                users_with_votes = []
+                for user in users:
+                    votes = Vote.query.filter_by(user_id=user.id).all()
+                    users_with_votes.append({
+                        "id": user.id,
+                        "fullname": user.fullname,
+                        "email": user.email or None,
+                        "phone": user.phone,
+                        "country_code": user.country_code,
+                        "access_code": user.access_code,
+                        "birthdate": user.birthdate,
+                        "created_at": user.created_at.isoformat() if user.created_at else None,
+                        "votes": [
+                            {
+                                "category_id": vote.category_id,
+                                "nominee_id": vote.nominee_id,
+                                "created_at": vote.created_at.isoformat() if vote.created_at else None
+                            }
+                            for vote in votes
+                        ]
+                    })
+                logger.info(f"✅ Retrieved {len(users_with_votes)} users with votes from PostgreSQL")
+                return users_with_votes
             except Exception as e:
-                logger.error(f"Error fetching users with SQLAlchemy: {e}")
+                logger.error(f"❌ Error fetching users with SQLAlchemy: {e}", exc_info=True)
                 return []
         else:
             # Use SQLite
-            conn = get_db()
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM users ORDER BY created_at DESC")
-            users = cursor.fetchall()
-            users_with_votes = []
-            for user in users:
-                cursor.execute(
-                    "SELECT category_id, nominee_id, created_at FROM votes WHERE user_id = ?",
-                    (user['id'],)
-                )
-                votes = cursor.fetchall()
-                users_with_votes.append({
-                    "id": user['id'],
-                    "fullname": user['fullname'],
-                    "email": user['email'],
-                    "phone": user['phone'],
-                    "country_code": user['country_code'],
-                    "access_code": user['access_code'],
-                    "birthdate": user['birthdate'],
-                    "created_at": user['created_at'],
-                    "votes": [
-                        {
-                            "category_id": v[0],
-                            "nominee_id": v[1],
-                            "created_at": v[2]
-                        }
-                        for v in votes
-                    ]
-                })
-            conn.close()
-            return users_with_votes
+            try:
+                conn = get_db()
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM users ORDER BY created_at DESC")
+                users = cursor.fetchall()
+                users_with_votes = []
+                for user in users:
+                    cursor.execute(
+                        "SELECT category_id, nominee_id, created_at FROM votes WHERE user_id = ?",
+                        (user['id'],)
+                    )
+                    votes = cursor.fetchall()
+                    users_with_votes.append({
+                        "id": user['id'],
+                        "fullname": user['fullname'],
+                        "email": user['email'],
+                        "phone": user['phone'],
+                        "country_code": user['country_code'],
+                        "access_code": user['access_code'],
+                        "birthdate": user['birthdate'],
+                        "created_at": user['created_at'],
+                        "votes": [
+                            {
+                                "category_id": v[0],
+                                "nominee_id": v[1],
+                                "created_at": v[2]
+                            }
+                            for v in votes
+                        ]
+                    })
+                conn.close()
+                logger.info(f"✅ Retrieved {len(users_with_votes)} users with votes from SQLite")
+                return users_with_votes
+            except Exception as e:
+                logger.error(f"❌ Error fetching users with SQLite: {e}", exc_info=True)
+                return []
 
     def require_admin():
         """Helper to require admin authentication - supports session and header fallback"""
@@ -900,13 +958,14 @@ def create_app() -> Flask:
         if not require_admin():
             return jsonify({"success": False, "message": "Admin access required"}), 403
         try:
-            if DATABASE_URL:
+            use_postgresql = app.config.get('USE_POSTGRESQL', False)
+            if use_postgresql:
                 # Use SQLAlchemy for PostgreSQL
                 from models import db, Vote
-                with app.app_context():
-                    affected = Vote.query.delete()
-                    db.session.commit()
-                    return jsonify({"success": True, "deleted": affected})
+                affected = Vote.query.delete()
+                db.session.commit()
+                logger.info(f"✅ Reset {affected} votes from PostgreSQL")
+                return jsonify({"success": True, "deleted": affected})
             else:
                 # Use SQLite
                 conn = get_db()
@@ -915,10 +974,11 @@ def create_app() -> Flask:
                 affected = cur.rowcount
                 conn.commit()
                 conn.close()
+                logger.info(f"✅ Reset {affected} votes from SQLite")
                 return jsonify({"success": True, "deleted": affected})
         except Exception as e:
-            logger.error(f"Error resetting votes: {e}")
-            return jsonify({"success": False, "message": "Failed to reset votes"}), 500
+            logger.error(f"❌ Error resetting votes: {e}", exc_info=True)
+            return jsonify({"success": False, "message": f"Failed to reset votes: {str(e)}"}), 500
 
     @app.get("/api/admin/users")
     def admin_get_users():
@@ -927,11 +987,23 @@ def create_app() -> Flask:
             return jsonify({"success": False, "message": "Admin access required"}), 403
         
         try:
+            use_postgresql = app.config.get('USE_POSTGRESQL', False)
+            logger.info(f"🔍 Admin get_users: use_postgresql={use_postgresql}, DATABASE_URL={'set' if app.config.get('DATABASE_URL') else 'not set'}")
+            
             users_with_votes = get_users_with_votes()
+            logger.info(f"✅ Admin get_users: Returning {len(users_with_votes)} users")
+            
+            # Log first user details for debugging
+            if users_with_votes and len(users_with_votes) > 0:
+                first_user = users_with_votes[0]
+                logger.info(f"📊 Sample user: ID={first_user.get('id')}, Name={first_user.get('fullname')}, Votes={len(first_user.get('votes', []))}")
+            
             return jsonify({"success": True, "users": users_with_votes})
         except Exception as e:
-            logger.error(f"Error getting users: {e}")
-            return jsonify({"success": False, "message": "Failed to get users"}), 500
+            logger.error(f"❌ Error getting users: {e}", exc_info=True)
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return jsonify({"success": False, "message": f"Failed to get users: {str(e)}"}), 500
 
     @app.delete("/api/admin/users/<int:user_id>")
     def admin_delete_user(user_id):
@@ -939,21 +1011,39 @@ def create_app() -> Flask:
         if not require_admin():
             return jsonify({"success": False, "message": "Admin access required"}), 403
         
-        conn = get_db()
-        cursor = conn.cursor()
-        
+        use_postgresql = app.config.get('USE_POSTGRESQL', False)
         try:
-            # Delete user's votes first
-            cursor.execute("DELETE FROM votes WHERE user_id = ?", (user_id,))
-            # Delete user
-            cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
-            conn.commit()
-            conn.close()
-            return jsonify({"success": True, "message": "User deleted successfully"})
+            if use_postgresql:
+                # Use SQLAlchemy for PostgreSQL
+                from models import db, User, Vote
+                # Delete user's votes first
+                Vote.query.filter_by(user_id=user_id).delete()
+                # Delete user
+                User.query.filter_by(id=user_id).delete()
+                db.session.commit()
+                logger.info(f"✅ Deleted user {user_id} and their votes from PostgreSQL")
+                return jsonify({"success": True, "message": "User deleted successfully"})
+            else:
+                # Use SQLite
+                conn = get_db()
+                cursor = conn.cursor()
+                # Delete user's votes first
+                cursor.execute("DELETE FROM votes WHERE user_id = ?", (user_id,))
+                # Delete user
+                cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
+                conn.commit()
+                conn.close()
+                logger.info(f"✅ Deleted user {user_id} and their votes from SQLite")
+                return jsonify({"success": True, "message": "User deleted successfully"})
         except Exception as e:
-            conn.close()
-            print(f"Error deleting user: {e}")
-            return jsonify({"success": False, "message": "Failed to delete user"}), 500
+            logger.error(f"❌ Error deleting user: {e}", exc_info=True)
+            if use_postgresql:
+                try:
+                    from models import db
+                    db.session.rollback()
+                except:
+                    pass
+            return jsonify({"success": False, "message": f"Failed to delete user: {str(e)}"}), 500
 
     @app.post("/api/admin/users/<int:user_id>/reset-votes")
     def admin_reset_user_votes(user_id):
@@ -962,13 +1052,14 @@ def create_app() -> Flask:
             return jsonify({"success": False, "message": "Admin access required"}), 403
         
         try:
-            if DATABASE_URL:
+            use_postgresql = app.config.get('USE_POSTGRESQL', False)
+            if use_postgresql:
                 # Use SQLAlchemy for PostgreSQL
                 from models import db, Vote
-                with app.app_context():
-                    affected = Vote.query.filter_by(user_id=user_id).delete()
-                    db.session.commit()
-                    return jsonify({"success": True, "deleted": affected, "message": "User votes reset successfully"})
+                affected = Vote.query.filter_by(user_id=user_id).delete()
+                db.session.commit()
+                logger.info(f"✅ Reset {affected} votes for user {user_id} from PostgreSQL")
+                return jsonify({"success": True, "deleted": affected, "message": "User votes reset successfully"})
             else:
                 # Use SQLite
                 conn = get_db()
@@ -977,10 +1068,11 @@ def create_app() -> Flask:
                 affected = cursor.rowcount
                 conn.commit()
                 conn.close()
+                logger.info(f"✅ Reset {affected} votes for user {user_id} from SQLite")
                 return jsonify({"success": True, "deleted": affected, "message": "User votes reset successfully"})
         except Exception as e:
-            logger.error(f"Error resetting user votes: {e}")
-            return jsonify({"success": False, "message": "Failed to reset user votes"}), 500
+            logger.error(f"❌ Error resetting user votes: {e}", exc_info=True)
+            return jsonify({"success": False, "message": f"Failed to reset user votes: {str(e)}"}), 500
 
     @app.post("/api/admin/reset-user-votes-by-code")
     def admin_reset_user_votes_by_code():
@@ -995,16 +1087,17 @@ def create_app() -> Flask:
             return jsonify({"success": False, "message": "Access code is required"}), 400
         
         try:
-            if DATABASE_URL:
+            use_postgresql = app.config.get('USE_POSTGRESQL', False)
+            if use_postgresql:
                 # Use SQLAlchemy for PostgreSQL
                 from models import db, User, Vote
-                with app.app_context():
-                    user = User.query.filter_by(access_code=access_code).first()
-                    if not user:
-                        return jsonify({"success": False, "message": "User not found with this access code"}), 404
-                    affected = Vote.query.filter_by(user_id=user.id).delete()
-                    db.session.commit()
-                    return jsonify({"success": True, "deleted": affected, "message": "User votes reset successfully"})
+                user = User.query.filter_by(access_code=access_code).first()
+                if not user:
+                    return jsonify({"success": False, "message": "User not found with this access code"}), 404
+                affected = Vote.query.filter_by(user_id=user.id).delete()
+                db.session.commit()
+                logger.info(f"✅ Reset {affected} votes for user {user.id} (code: {access_code}) from PostgreSQL")
+                return jsonify({"success": True, "deleted": affected, "message": "User votes reset successfully"})
             else:
                 # Use SQLite
                 conn = get_db()
@@ -1019,10 +1112,11 @@ def create_app() -> Flask:
                 affected = cursor.rowcount
                 conn.commit()
                 conn.close()
+                logger.info(f"✅ Reset {affected} votes for user {user_id} (code: {access_code}) from SQLite")
                 return jsonify({"success": True, "deleted": affected, "message": "User votes reset successfully"})
         except Exception as e:
-            logger.error(f"Error resetting user votes by code: {e}")
-            return jsonify({"success": False, "message": "Failed to reset user votes"}), 500
+            logger.error(f"❌ Error resetting user votes by code: {e}", exc_info=True)
+            return jsonify({"success": False, "message": f"Failed to reset user votes: {str(e)}"}), 500
 
     @app.post("/api/admin/reset-category-votes")
     def admin_reset_category_votes():
@@ -1078,13 +1172,14 @@ def create_app() -> Flask:
             return jsonify({"success": False, "message": "Category not found"}), 404
         
         try:
-            if DATABASE_URL:
+            use_postgresql = app.config.get('USE_POSTGRESQL', False)
+            if use_postgresql:
                 # Use SQLAlchemy for PostgreSQL
                 from models import db, Vote
-                with app.app_context():
-                    affected = Vote.query.filter_by(category_id=category_id).delete()
-                    db.session.commit()
-                    return jsonify({"success": True, "deleted": affected, "message": f"Category {category_id} votes reset successfully"})
+                affected = Vote.query.filter_by(category_id=category_id).delete()
+                db.session.commit()
+                logger.info(f"✅ Reset {affected} votes for category {category_id} from PostgreSQL")
+                return jsonify({"success": True, "deleted": affected, "message": f"Category {category_id} votes reset successfully"})
             else:
                 # Use SQLite
                 conn = get_db()
@@ -1093,10 +1188,11 @@ def create_app() -> Flask:
                 affected = cursor.rowcount
                 conn.commit()
                 conn.close()
+                logger.info(f"✅ Reset {affected} votes for category {category_id} from SQLite")
                 return jsonify({"success": True, "deleted": affected, "message": f"Category {category_id} votes reset successfully"})
         except Exception as e:
-            logger.error(f"Error resetting category votes: {e}")
-            return jsonify({"success": False, "message": "Failed to reset category votes"}), 500
+            logger.error(f"❌ Error resetting category votes: {e}", exc_info=True)
+            return jsonify({"success": False, "message": f"Failed to reset category votes: {str(e)}"}), 500
 
     @app.get("/api/admin/total-votes")
     def admin_total_votes():
@@ -1108,12 +1204,15 @@ def create_app() -> Flask:
                 return jsonify({"success": False, "message": "Authentication required"}), 403
         
         try:
-            if DATABASE_URL:
+            use_postgresql = app.config.get('USE_POSTGRESQL', False)
+            logger.info(f"🔍 Admin total_votes: use_postgresql={use_postgresql}")
+            
+            if use_postgresql:
                 # Use SQLAlchemy for PostgreSQL
                 from models import db, Vote
-                with app.app_context():
-                    total = Vote.query.count()
-                    return jsonify({"success": True, "total": total})
+                total = Vote.query.count()
+                logger.info(f"✅ Total votes from PostgreSQL: {total}")
+                return jsonify({"success": True, "total": total})
             else:
                 # Use SQLite
                 conn = get_db()
@@ -1121,10 +1220,13 @@ def create_app() -> Flask:
                 cursor.execute("SELECT COUNT(*) FROM votes")
                 total = cursor.fetchone()[0]
                 conn.close()
+                logger.info(f"✅ Total votes from SQLite: {total}")
                 return jsonify({"success": True, "total": total})
         except Exception as e:
-            logger.error(f"Error getting total votes: {e}")
-            return jsonify({"success": False, "message": "Failed to get total votes"}), 500
+            logger.error(f"❌ Error getting total votes: {e}", exc_info=True)
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return jsonify({"success": False, "message": f"Failed to get total votes: {str(e)}"}), 500
 
     @app.post("/api/admin/birthdates")
     def admin_add_birthdate():
