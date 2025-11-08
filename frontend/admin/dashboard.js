@@ -8,6 +8,20 @@
     let allUsers = [];
     let categoriesData = window.CATEGORIES || [];
 
+    // Helper function to get admin headers for API requests
+    function getAdminHeaders() {
+        const headers = {
+            'Content-Type': 'application/json'
+        };
+        try {
+            const code = sessionStorage.getItem('admin_code');
+            if (code) {
+                headers['X-Admin-Code'] = code;
+            }
+        } catch(_) {}
+        return headers;
+    }
+
     // Check admin/analyst session on load
     async function checkAdminSession() {
         try {
@@ -125,6 +139,7 @@
     async function init() {
         await checkAdminSession();
         initNavigation();
+        initUserDropdown();
         await loadAnalytics();
         
         // Make Total Votes card clickable
@@ -352,7 +367,8 @@
             // Get total votes (available for both admin and analyst)
             try {
                 const votesResponse = await fetch(`${API_BASE}/api/admin/total-votes?t=${timestamp}`, {
-                    credentials: 'include'
+                    credentials: 'include',
+                    headers: getAdminHeaders()
                 });
                 if (votesResponse.ok) {
                     const votesData = await votesResponse.json();
@@ -382,7 +398,8 @@
                 try {
                     const usersTimestamp = Date.now();
                     const usersResponse = await fetch(`${API_BASE}/api/admin/users?t=${usersTimestamp}`, {
-                        credentials: 'include'
+                        credentials: 'include',
+                        headers: getAdminHeaders()
                     });
                     if (usersResponse.ok) {
                         const usersData = await usersResponse.json();
@@ -750,7 +767,8 @@
         try {
             const timestamp = Date.now();
             const response = await fetch(`${API_BASE}/api/admin/users?t=${timestamp}`, {
-                credentials: 'include'
+                credentials: 'include',
+                headers: getAdminHeaders()
             });
             const data = await response.json();
             
@@ -821,7 +839,8 @@
         try {
             const response = await fetch(`${API_BASE}/api/admin/users/${userId}`, {
                 method: 'DELETE',
-                credentials: 'include'
+                credentials: 'include',
+                headers: getAdminHeaders()
             });
             const data = await response.json();
             
@@ -977,13 +996,13 @@
                 }
 
                 try {
+                    const headers = getAdminHeaders();
+                    headers['Cache-Control'] = 'no-cache';
+                    headers['Pragma'] = 'no-cache';
                     const response = await fetch(`${API_BASE}/api/admin/reset-votes`, {
                         method: 'POST',
                         credentials: 'include',
-                        headers: {
-                            'Cache-Control': 'no-cache',
-                            'Pragma': 'no-cache'
-                        }
+                        headers: headers
                     });
                     const data = await response.json();
                     
@@ -1049,15 +1068,14 @@
                         // Numeric - use database ID
                         response = await fetch(`${API_BASE}/api/admin/users/${input}/reset-votes`, {
                             method: 'POST',
-                            credentials: 'include'
+                            credentials: 'include',
+                            headers: getAdminHeaders()
                         });
                     } else {
                         // Alphanumeric - use access code
                         response = await fetch(`${API_BASE}/api/admin/reset-user-votes-by-code`, {
                             method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json'
-                            },
+                            headers: getAdminHeaders(),
                             credentials: 'include',
                             body: JSON.stringify({ access_code: input })
                         });
@@ -1111,9 +1129,7 @@
                 try {
                     const response = await fetch(`${API_BASE}/api/admin/reset-category-votes`, {
                         method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
+                        headers: getAdminHeaders(),
                         credentials: 'include',
                         body: JSON.stringify({ category: categoryInput })
                     });
@@ -1152,9 +1168,7 @@
                 try {
                     const response = await fetch(`${API_BASE}/api/admin/birthdates`, {
                         method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
+                        headers: getAdminHeaders(),
                         credentials: 'include',
                         body: JSON.stringify({ day, month, year })
                     });
@@ -1255,9 +1269,7 @@
         try {
             const response = await fetch(`${API_BASE}/api/admin/nominees`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: getAdminHeaders(),
                 credentials: 'include',
                 body: JSON.stringify({ category_id: categoryId, name })
             });
@@ -1290,9 +1302,7 @@
         try {
             const response = await fetch(`${API_BASE}/api/admin/nominees`, {
                 method: 'DELETE',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: getAdminHeaders(),
                 credentials: 'include',
                 body: JSON.stringify({ category_id: categoryId, nominee_index: nomineeIndex })
             });
@@ -1317,30 +1327,73 @@
         }
     }
 
-    // Logout
+    // User profile dropdown
+    function initUserDropdown() {
+        const userAvatarBtn = document.getElementById('userAvatarBtn');
+        const userDropdown = document.getElementById('userDropdown');
+        const headerLogoutBtn = document.getElementById('headerLogoutBtn');
+        
+        if (!userAvatarBtn || !userDropdown) return;
+        
+        // Toggle dropdown
+        userAvatarBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const isHidden = userDropdown.hasAttribute('hidden');
+            if (isHidden) {
+                userDropdown.removeAttribute('hidden');
+                userAvatarBtn.setAttribute('aria-expanded', 'true');
+            } else {
+                userDropdown.setAttribute('hidden', 'true');
+                userAvatarBtn.setAttribute('aria-expanded', 'false');
+            }
+        });
+        
+        // Close dropdown when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!userAvatarBtn.contains(e.target) && !userDropdown.contains(e.target)) {
+                userDropdown.setAttribute('hidden', 'true');
+                userAvatarBtn.setAttribute('aria-expanded', 'false');
+            }
+        });
+        
+        // Header logout button
+        if (headerLogoutBtn) {
+            headerLogoutBtn.addEventListener('click', async () => {
+                await performLogout();
+            });
+        }
+    }
+    
+    // Logout function
+    async function performLogout() {
+        try {
+            await fetch(`${API_BASE}/api/admin/logout`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: getAdminHeaders()
+            });
+        } catch (error) {
+            console.error('Logout error:', error);
+        }
+        
+        // Clear admin-related storage
+        try {
+            sessionStorage.removeItem('admin_role');
+            sessionStorage.removeItem('admin_code');
+            localStorage.removeItem('vote_cache_timestamp');
+            localStorage.removeItem('cached_votes');
+            localStorage.removeItem('votes_reset');
+        } catch (_) {}
+        
+        // Use replace to prevent back button from restoring state
+        window.location.replace('login.html');
+    }
+
+    // Sidebar logout
     const logoutBtn = document.getElementById('sidebarLogoutBtn');
     if (logoutBtn) {
         logoutBtn.addEventListener('click', async () => {
-            try {
-                await fetch(`${API_BASE}/api/admin/logout`, {
-                    method: 'POST',
-                    credentials: 'include'
-                });
-            } catch (error) {
-                console.error('Logout error:', error);
-            }
-            
-            // Clear admin-related storage
-            try {
-                sessionStorage.removeItem('admin_role');
-                sessionStorage.removeItem('admin_code');
-                localStorage.removeItem('vote_cache_timestamp');
-                localStorage.removeItem('cached_votes');
-                localStorage.removeItem('votes_reset');
-            } catch (_) {}
-            
-            // Use replace to prevent back button from restoring state
-            window.location.replace('login.html');
+            await performLogout();
         });
     }
 
