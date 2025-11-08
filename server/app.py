@@ -603,18 +603,21 @@ def create_app() -> Flask:
             session['fullname'] = user_dict['fullname']
             session['birthdate'] = user_dict['birthdate']
             session['access_code'] = user_dict['access_code']
-        
-        return jsonify({
-            "success": True,
-            "message": "Login successful",
-            "user": {
-                "id": user['id'],
-                "fullname": user['fullname'],
-                "phone": user['phone'],
-                "email": user['email'],
-                "access_code": user['access_code']
-            }
-        })
+            
+            return jsonify({
+                "success": True,
+                "message": "Login successful",
+                "user": {
+                    "id": user_dict['id'],
+                    "fullname": user_dict['fullname'],
+                    "phone": user_dict['phone'],
+                    "email": user_dict.get('email'),
+                    "access_code": user_dict['access_code']
+                }
+            })
+        except Exception as e:
+            logger.error(f"❌ Error during login: {e}", exc_info=True)
+            return jsonify({"success": False, "message": f"Login failed: {str(e)}"}), 500
 
     @app.get("/api/check-session")
     def check_session():
