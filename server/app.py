@@ -138,27 +138,7 @@ def get_user_by_access_code(code: str) -> Optional[sqlite3.Row]:
     conn.close()
     return user
 
-def authenticate_request() -> Optional[int]:
-    """Return user_id if request is authenticated via session or access code header."""
-    if 'user_id' in session:
-        return int(session['user_id'])
-    # Header-based fallback: X-Access-Code or Bearer <code>
-    code = request.headers.get('X-Access-Code', '').strip()
-    if not code:
-        auth = request.headers.get('Authorization', '')
-        if auth.lower().startswith('bearer '):
-            code = auth.split(' ', 1)[1].strip()
-    if code:
-        user = get_user_by_access_code(code)
-        if user:
-            # optionally attach a lightweight session
-            session['user_id'] = user['id']
-            session['access_code'] = user['access_code']
-            session['fullname'] = user['fullname']
-            session['phone'] = user['phone']
-            session['birthdate'] = user['birthdate']
-            return int(user['id'])
-    return None
+# authenticate_request is now defined inside create_app() as authenticate_request_helper()
 
 def generate_access_code() -> str:
     """Generate a unique 6-character access code: 4 letters + 2 numbers"""
@@ -384,60 +364,90 @@ def create_app() -> Flask:
         if email and '@' not in email:
             return jsonify({"success": False, "message": "Please enter a valid email address"}), 400
         
-        # Check if same birthdate + fullname combination already exists
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        # Normalize fullname for comparison (lowercase, trimmed)
+        use_postgresql = app.config.get('USE_POSTGRESQL', False)
         fullname_normalized = fullname.lower().strip()
-        
-        # Check if user with same birthdate and fullname exists
-        cursor.execute(
-            "SELECT birthdate_suffix FROM users WHERE birthdate = ? AND LOWER(TRIM(fullname)) = ?",
-            (formatted_birthdate, fullname_normalized)
-        )
-        existing_user = cursor.fetchone()
-        
-        # Determine birthdate_suffix
-        if existing_user:
-            # User with same birthdate + fullname exists, check if it's same person
-            # Or assign new suffix if different person
-            cursor.execute(
-                "SELECT MAX(birthdate_suffix) FROM users WHERE birthdate = ?",
-                (formatted_birthdate,)
-            )
-            max_suffix = cursor.fetchone()[0]
-            birthdate_suffix = (max_suffix or 0) + 1
-        else:
-            # Check if birthdate exists (for assigning suffix)
-            cursor.execute(
-                "SELECT MAX(birthdate_suffix) FROM users WHERE birthdate = ?",
-                (formatted_birthdate,)
-            )
-            max_suffix = cursor.fetchone()[0]
-            birthdate_suffix = (max_suffix or 0) + 1
-        
-        # Full phone number with country code
         full_phone = f"{country_code}{phone}"
         
-        # Check if phone already exists (optional check)
-        cursor.execute("SELECT id FROM users WHERE phone = ?", (full_phone,))
-        if cursor.fetchone():
-            conn.close()
-            return jsonify({"success": False, "message": "Phone number already registered"}), 409
-        
-        # Generate unique access code
-        access_code = generate_access_code()
-        
-        # Create user
         try:
-            cursor.execute(
-                "INSERT INTO users (fullname, phone, country_code, email, birthdate, birthdate_suffix, access_code) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (fullname, full_phone, country_code, email, formatted_birthdate, birthdate_suffix, access_code)
-            )
-            user_id = cursor.lastrowid
-            conn.commit()
-            conn.close()
+            if use_postgresql:
+                # Use SQLAlchemy for PostgreSQL
+                from models import db, User
+                from sqlalchemy import func
+                
+                # Check if user with same birthdate and fullname exists
+                existing_user = User.query.filter(
+                    db.func.lower(db.func.trim(User.fullname)) == fullname_normalized,
+                    User.birthdate == formatted_birthdate
+                ).first()
+                
+                # Get max birthdate_suffix for this birthdate
+                max_suffix_result = db.session.query(func.max(User.birthdate_suffix)).filter(
+                    User.birthdate == formatted_birthdate
+                ).scalar()
+                birthdate_suffix = (max_suffix_result or 0) + 1
+                
+                # Check if phone already exists
+                phone_exists = User.query.filter_by(phone=full_phone).first()
+                if phone_exists:
+                    return jsonify({"success": False, "message": "Phone number already registered"}), 409
+                
+                # Generate unique access code
+                access_code = generate_access_code_helper()
+                
+                # Create user
+                new_user = User(
+                    fullname=fullname,
+                    phone=full_phone,
+                    country_code=country_code,
+                    email=email,
+                    birthdate=formatted_birthdate,
+                    birthdate_suffix=birthdate_suffix,
+                    access_code=access_code
+                )
+                db.session.add(new_user)
+                db.session.commit()
+                user_id = new_user.id
+                
+                logger.info(f"✅ User created in PostgreSQL: ID={user_id}, Name={fullname}, Code={access_code}")
+            else:
+                # Use SQLite
+                conn = get_db()
+                cursor = conn.cursor()
+                
+                # Check if user with same birthdate and fullname exists
+                cursor.execute(
+                    "SELECT birthdate_suffix FROM users WHERE birthdate = ? AND LOWER(TRIM(fullname)) = ?",
+                    (formatted_birthdate, fullname_normalized)
+                )
+                existing_user = cursor.fetchone()
+                
+                # Determine birthdate_suffix
+                cursor.execute(
+                    "SELECT MAX(birthdate_suffix) FROM users WHERE birthdate = ?",
+                    (formatted_birthdate,)
+                )
+                max_suffix = cursor.fetchone()[0]
+                birthdate_suffix = (max_suffix or 0) + 1
+                
+                # Check if phone already exists
+                cursor.execute("SELECT id FROM users WHERE phone = ?", (full_phone,))
+                if cursor.fetchone():
+                    conn.close()
+                    return jsonify({"success": False, "message": "Phone number already registered"}), 409
+                
+                # Generate unique access code
+                access_code = generate_access_code_helper()
+                
+                # Create user
+                cursor.execute(
+                    "INSERT INTO users (fullname, phone, country_code, email, birthdate, birthdate_suffix, access_code) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (fullname, full_phone, country_code, email, formatted_birthdate, birthdate_suffix, access_code)
+                )
+                user_id = cursor.lastrowid
+                conn.commit()
+                conn.close()
+                
+                logger.info(f"✅ User created in SQLite: ID={user_id}, Name={fullname}, Code={access_code}")
             
             # Create session
             session['user_id'] = user_id
@@ -458,9 +468,14 @@ def create_app() -> Flask:
                 }
             })
         except Exception as e:
-            conn.close()
-            print(f"Error creating account: {e}")
-            return jsonify({"success": False, "message": "Error creating account"}), 500
+            logger.error(f"❌ Error creating account: {e}", exc_info=True)
+            if use_postgresql:
+                try:
+                    from models import db
+                    db.session.rollback()
+                except:
+                    pass
+            return jsonify({"success": False, "message": f"Error creating account: {str(e)}"}), 500
 
     @app.post("/api/login")
     def login():
@@ -497,51 +512,97 @@ def create_app() -> Flask:
         # Phone not required; keep for backward compatibility if provided
         full_phone = f"{country_code}{phone}" if (country_code and phone) else None
         
-        conn = get_db()
-        cursor = conn.cursor()
+        use_postgresql = app.config.get('USE_POSTGRESQL', False)
         
-        # Find user by birthdate + fullname (case-insensitive)
-        cursor.execute(
-            "SELECT * FROM users WHERE birthdate = ? AND LOWER(TRIM(fullname)) = ?",
-            (formatted_birthdate, fullname_normalized)
-        )
-        user = cursor.fetchone()
-        
-        if not user:
-            # Check if birthdate exists but name doesn't match
-            cursor.execute(
-                "SELECT id FROM users WHERE birthdate = ?",
-                (formatted_birthdate,)
-            )
-            if cursor.fetchone():
-                conn.close()
-                return jsonify({
-                    "success": False,
-                    "message": "Name doesn't match our records for this birthdate"
-                }), 404
+        try:
+            if use_postgresql:
+                # Use SQLAlchemy for PostgreSQL
+                from models import db, User
+                
+                # Find user by birthdate + fullname (case-insensitive)
+                user = User.query.filter(
+                    db.func.lower(db.func.trim(User.fullname)) == fullname_normalized,
+                    User.birthdate == formatted_birthdate
+                ).first()
+                
+                if not user:
+                    # Check if birthdate exists but name doesn't match
+                    birthdate_exists = User.query.filter_by(birthdate=formatted_birthdate).first()
+                    if birthdate_exists:
+                        return jsonify({
+                            "success": False,
+                            "message": "Name doesn't match our records for this birthdate"
+                        }), 404
+                    else:
+                        return jsonify({
+                            "success": False,
+                            "message": "Sign up for an account"
+                        }), 404
+                
+                # Verify access code
+                if user.access_code != access_code:
+                    return jsonify({
+                        "success": False,
+                        "message": "Invalid access code. Please check your access code."
+                    }), 403
+                
+                user_dict = {
+                    'id': user.id,
+                    'phone': user.phone,
+                    'fullname': user.fullname,
+                    'birthdate': user.birthdate,
+                    'access_code': user.access_code
+                }
+                logger.info(f"✅ User logged in from PostgreSQL: ID={user.id}, Name={user.fullname}")
             else:
+                # Use SQLite
+                conn = get_db()
+                cursor = conn.cursor()
+                
+                # Find user by birthdate + fullname (case-insensitive)
+                cursor.execute(
+                    "SELECT * FROM users WHERE birthdate = ? AND LOWER(TRIM(fullname)) = ?",
+                    (formatted_birthdate, fullname_normalized)
+                )
+                user = cursor.fetchone()
+                
+                if not user:
+                    # Check if birthdate exists but name doesn't match
+                    cursor.execute(
+                        "SELECT id FROM users WHERE birthdate = ?",
+                        (formatted_birthdate,)
+                    )
+                    if cursor.fetchone():
+                        conn.close()
+                        return jsonify({
+                            "success": False,
+                            "message": "Name doesn't match our records for this birthdate"
+                        }), 404
+                    else:
+                        conn.close()
+                        return jsonify({
+                            "success": False,
+                            "message": "Sign up for an account"
+                        }), 404
+                
+                # Verify access code
+                if user['access_code'] != access_code:
+                    conn.close()
+                    return jsonify({
+                        "success": False,
+                        "message": "Invalid access code. Please check your access code."
+                    }), 403
+                
+                user_dict = dict(user)
                 conn.close()
-                return jsonify({
-                    "success": False,
-                    "message": "Sign up for an account"
-                }), 404
-        
-        # Verify access code
-        if user['access_code'] != access_code:
-            conn.close()
-            return jsonify({
-                "success": False,
-                "message": "Invalid access code. Please check your access code."
-            }), 403
-        
-        conn.close()
-        
-        # Create session
-        session['user_id'] = user['id']
-        session['phone'] = user['phone']
-        session['fullname'] = user['fullname']
-        session['birthdate'] = user['birthdate']
-        session['access_code'] = user['access_code']
+                logger.info(f"✅ User logged in from SQLite: ID={user_dict['id']}, Name={user_dict['fullname']}")
+            
+            # Create session
+            session['user_id'] = user_dict['id']
+            session['phone'] = user_dict['phone']
+            session['fullname'] = user_dict['fullname']
+            session['birthdate'] = user_dict['birthdate']
+            session['access_code'] = user_dict['access_code']
         
         return jsonify({
             "success": True,
@@ -616,7 +677,7 @@ def create_app() -> Flask:
     @app.post("/api/vote")
     def cast_vote():
         """Cast a vote for a nominee in a category; one vote per user per category"""
-        user_id = authenticate_request()
+        user_id = authenticate_request_helper()
         if not user_id:
             return jsonify({"success": False, "message": "Not authenticated"}), 401
         data = request.get_json() or {}
@@ -753,7 +814,7 @@ def create_app() -> Flask:
     @app.get("/api/my-votes")
     def my_votes():
         """Return categories the authenticated user has voted in"""
-        user_id = authenticate_request()
+        user_id = authenticate_request_helper()
         if not user_id:
             return jsonify({"success": False, "message": "Not authenticated"}), 401
         
@@ -795,7 +856,62 @@ def create_app() -> Flask:
     ADMIN_CODE = "B1E5Z0"  # 3 letters + 3 numbers (mixed)
     ANALYST_CODE = "HANS13"  # 4 letters + 2 numbers
     
-    # Database helper - use SQLAlchemy if PostgreSQL is configured, otherwise SQLite
+    # Database helper functions - use SQLAlchemy if PostgreSQL is configured, otherwise SQLite
+    def get_user_by_access_code_helper(code: str):
+        """Get user by access code - works with both PostgreSQL and SQLite"""
+        if not code:
+            return None
+        use_postgresql = app.config.get('USE_POSTGRESQL', False)
+        if use_postgresql:
+            from models import db, User
+            user = User.query.filter_by(access_code=code.strip().upper()).first()
+            if user:
+                return {
+                    'id': user.id,
+                    'fullname': user.fullname,
+                    'phone': user.phone,
+                    'country_code': user.country_code,
+                    'email': user.email,
+                    'birthdate': user.birthdate,
+                    'access_code': user.access_code,
+                    'created_at': user.created_at.isoformat() if user.created_at else None
+                }
+            return None
+        else:
+            conn = get_db()
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM users WHERE access_code = ?", (code.strip().upper(),))
+            user = cur.fetchone()
+            conn.close()
+            return dict(user) if user else None
+    
+    def generate_access_code_helper() -> str:
+        """Generate a unique 6-character access code: 4 letters + 2 numbers"""
+        letters = string.ascii_uppercase
+        digits = string.digits
+        use_postgresql = app.config.get('USE_POSTGRESQL', False)
+        while True:
+            # Generate 4 random letters
+            letter_part = ''.join(secrets.choice(letters) for _ in range(4))
+            # Generate 2 random numbers
+            number_part = ''.join(secrets.choice(digits) for _ in range(2))
+            # Combine: 4 letters + 2 numbers
+            code = letter_part + number_part
+            # Check if code already exists
+            if use_postgresql:
+                from models import db, User
+                existing = User.query.filter_by(access_code=code).first()
+                if not existing:
+                    return code
+            else:
+                conn = get_db()
+                cursor = conn.cursor()
+                cursor.execute("SELECT id FROM users WHERE access_code = ?", (code,))
+                if not cursor.fetchone():
+                    conn.close()
+                    return code
+                conn.close()
+    
     def get_users_with_votes():
         """Get all users with their votes - works with both PostgreSQL and SQLite"""
         use_postgresql = app.config.get('USE_POSTGRESQL', False)
@@ -869,6 +985,28 @@ def create_app() -> Flask:
             except Exception as e:
                 logger.error(f"❌ Error fetching users with SQLite: {e}", exc_info=True)
                 return []
+
+    def authenticate_request_helper() -> Optional[int]:
+        """Return user_id if request is authenticated via session or access code header."""
+        if 'user_id' in session:
+            return int(session['user_id'])
+        # Header-based fallback: X-Access-Code or Bearer <code>
+        code = request.headers.get('X-Access-Code', '').strip()
+        if not code:
+            auth = request.headers.get('Authorization', '')
+            if auth.lower().startswith('bearer '):
+                code = auth.split(' ', 1)[1].strip()
+        if code:
+            user = get_user_by_access_code_helper(code)
+            if user:
+                # optionally attach a lightweight session
+                session['user_id'] = user['id']
+                session['access_code'] = user['access_code']
+                session['fullname'] = user['fullname']
+                session['phone'] = user['phone']
+                session['birthdate'] = user['birthdate']
+                return int(user['id'])
+        return None
 
     def require_admin():
         """Helper to require admin authentication - supports session and header fallback"""
