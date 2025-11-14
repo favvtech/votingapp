@@ -283,14 +283,16 @@ body {
     transition: transform 200ms ease;
 }
 
-/* Real images: better face-centered positioning for portraits */
+/* Real images: better face-centered positioning for portraits - ensures 100% face visibility */
 .nominee-image-real {
-    object-position: center 30%; /* Centers face area (typically upper-middle of portrait) */
+    object-position: center 25%; /* Centers face area (typically upper-middle of portrait) - optimized for full face display */
+    object-fit: cover; /* Ensure full coverage while maintaining aspect ratio */
 }
 
 /* Placeholder images: center positioning */
 .nominee-image-placeholder {
     object-position: center;
+    object-fit: cover;
 }
 
 .nominee-card:hover .nominee-image {
@@ -311,6 +313,8 @@ body {
 .muted { color: var(--muted); }
 .footer-contact ul { margin: 8px 0 0; padding: 0; list-style: none; }
 .footer-contact li { margin: 6px 0; color: var(--muted); }
+.footer-contact li a { color: var(--muted); text-decoration: none; transition: color 200ms ease; }
+.footer-contact li a:hover { color: var(--gold); }
 .footer-contact h3, .footer-socials h3 { margin: 0; font-size: 20px; }
 .socials { display: flex; gap: 24px; }
 .socials img { width: 28px; height: 28px; filter: grayscale(1); transition: filter 200ms ease, transform 150ms ease; }

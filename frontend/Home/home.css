@@ -273,6 +273,8 @@ body {
 .muted { color: var(--muted); }
 .footer-contact ul { margin: 8px 0 0; padding: 0; list-style: none; }
 .footer-contact li { margin: 6px 0; color: var(--muted); }
+.footer-contact li a { color: var(--muted); text-decoration: none; transition: color 200ms ease; }
+.footer-contact li a:hover { color: var(--gold); }
 .socials { display: flex; gap: 24px; }
 .socials img { width: 28px; height: 28px; filter: grayscale(1); transition: filter 200ms ease, transform 150ms ease; }
 .socials a:hover img { filter: none; transform: translateY(-1px); }

@@ -7,11 +7,12 @@ window.CATEGORIES = [
       "Momoh Precious",
       "Victor Nweze",
       "Samuel Nasir",
-      "Ogbor Edward Nnamdi",
+      "Ogbor Nnamdi",
       "Thomas Tunmise",
       "Ayepe Vanessa",
       "Richard Gbadamashi",
-      "Gamsheya Ezra Lumsunya"
+      "Gamsheya Lumsunya",
+      "Confidence Felix"
     ]
   },
   {
@@ -23,20 +24,23 @@ window.CATEGORIES = [
       "Abel Ehiaguina",
       "Ibrahim Fabolude",
       "Tajudeen Abiodun",
-      "Richard Olawepo"
+      "Prosperity Peter",
+      "Adebowale Micheal",
+      "Samson Obaji"
     ]
   },
   {
     number: 3,
     title: "YSA OF THE YEAR (FEMALE)",
     nominees: [
-      "Adenekan Kehinde Adedamola",
+      "Adenekan Kehinde",
       "Bukola Ajisafe",
-      "Ochigbo Precious",
+      "Adeniran Hallelujah",
       "Duthen Funmilayo",
       "Thomas Tunmise",
       "Victory Igein",
-      "Akinwunmi Kehinde"
+      "Akinwunmi Kehinde",
+      "Oreoluwa Adebiyi"
     ]
   },
   {
@@ -49,9 +53,7 @@ window.CATEGORIES = [
       "Blessing Obaji",
       "Ruth Mbonu",
       "Tajudeen Abiodun",
-      "Precious Ochigbo",
-      "Oreoluwa Adebiyi",
-      "Joy Essiet"
+      "Adenekan Kehinde"
     ]
   },
   {
@@ -63,19 +65,22 @@ window.CATEGORIES = [
       "Eniola Ayinde",
       "Ijeoma Nwabueze",
       "Gbadebo Elizabeth",
-      "Musa Dauda Marvelous",
+      "Marvelous Musa",
       "Samson Obaji",
-      "Richard Olawepo"
+      "Momoh Precious"
     ]
   },
   {
     number: 6,
     title: "BEST DRESSED MALE",
     nominees: [
-      "Zion Ita Udong Abasi",
-      "Peter Prosperity Sunday",
-      "Samuel Nasir",
-      "Emmanuel Nasir"
+      "Zion Ita",
+      "Okolie Arinze",
+      "Tajudeen Abiodun",
+      "Monson Odonokwu",
+      "Emmanuel Nasir",
+      "Abel Ehiaguina",
+      "Ememekwe Emmanuel"
     ]
   },
   {
@@ -85,49 +90,65 @@ window.CATEGORIES = [
       "Veronica Akinwande",
       "Precious Ochigbo",
       "Thomas Tunmise",
-      "Adebimpe Gbadebo",
+      "Taiwo Yusuf",
       "Justina Samuel",
-      "Akinwunmi Taiwo"
+      "Akinwunmi Taiwo",
+      "Adeniran Hallelujah",
+      "Adenekan Kehinde"
     ]
   },
   {
     number: 8,
     title: "YSA PARTICIPATION AWARD",
     nominees: [
-      "Joy Ford Adaku",
-      "Joseph Abiodun Wasiu",
+      "Joy Adaku",
+      "Joseph Abiodun",
       "Thomas Tunmise",
       "Bamidele Michael",
       "Emmanuel Nasir",
-      "Tajudeen Abiodun"
+      "Tajudeen Abiodun",
+      "Momoh Precious"
     ]
   },
   {
     number: 9,
     title: "MOST CHRISTLIKE AWARD",
     nominees: [
-      "Ememekwe Emmanuel Chidera",
+      "Ememekwe Emmanuel",
       "Eric Agwa",
-      "Ibrahim Fabolude",
-      "Love Ayinde Feyisola",
+      "Adeniran Oyinkansola",
+      "Love Ayinde",
       "Thomas Tunmise",
       "Confidence Felix",
       "Samuel Nasir",
-      "Dauda Musa Marvelous"
+      "Marvelous Musa"
     ]
   },
   {
     number: 10,
     title: "LEADERSHIP APPRECIATION AWARD",
     nominees: [
-      "Olubisi Olamilekan",
-      "Elisha Okon Maurice",
-      "Abraham Suleiman",
-      "Adeosun O. King",
+      "Olasunkanmi Olamilekan",
+      "Elisha Maurice",
+      "Abraham Ikpe",
+      "Adeosun King",
       "Abel Ehiaguina",
       "Oreoluwa Adebiyi",
       "Samuel Nasir",
       "Tajudeen Abiodun"
+    ]
+  },
+  {
+    number: 11,
+    title: "YSA GATHERING PLACE PARTICIPATION AWARD",
+    nominees: [
+      "Victoria Ekpenyong",
+      "Tajudeen Abiodun",
+      "Adeniran Hallelujah",
+      "Precious Ochigbo",
+      "Thomas Tunmise",
+      "Bunmi Ogundapo",
+      "Richard Gbadamashi"
     ]
   }
 ];

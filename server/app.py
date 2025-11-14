@@ -1,9 +1,11 @@
 import os
+import csv
 import json
 import sqlite3
 import secrets
 import string
 import logging
+from functools import lru_cache
 from datetime import datetime
 from typing import List, Set, Optional
 from flask import Flask, jsonify, request, session
@@ -107,6 +109,87 @@ def load_categories_data() -> Optional[list]:
     except Exception:
         return None
 
+def normalize_name(value: str) -> str:
+    """Normalize names for comparison (case-insensitive, trimmed)."""
+    if value is None:
+        return ''
+    return ' '.join(str(value).strip().lower().split())
+
+def normalize_phone(value: str) -> str:
+    """Normalize Nigerian phone numbers to +234XXXXXXXXXX format."""
+    if value is None:
+        return ''
+    digits = ''.join(ch for ch in str(value) if ch.isdigit())
+    if not digits:
+        return ''
+    if digits.startswith('234') and len(digits) > 10:
+        digits = digits[3:]
+    if digits.startswith('0') and len(digits) > 10:
+        digits = digits[1:]
+    if len(digits) > 10:
+        digits = digits[-10:]
+    if len(digits) == 11 and digits.startswith('0'):
+        digits = digits[1:]
+    if len(digits) > 10:
+        digits = digits[-10:]
+    if len(digits) == 9:
+        digits = digits.rjust(10, '0')
+    if len(digits) != 10:
+        logger.warning(f"Unexpected phone length after normalization: {value} -> {digits}")
+        digits = digits[-10:].rjust(10, '0')
+    return '+234' + digits
+
+@lru_cache(maxsize=1)
+def get_event_registration_records() -> List[dict]:
+    """Load event registration users from JSON file and cache the result."""
+    path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'event_registration_users.json'))
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            raw_records = json.load(f)
+    except FileNotFoundError:
+        logger.warning(f"Event registration file not found at {path}")
+        return []
+    except Exception as exc:
+        logger.error(f"Failed to load event registration users: {exc}", exc_info=True)
+        return []
+
+    records: List[dict] = []
+    for entry in raw_records:
+        first = (entry.get('first_name') or '').strip()
+        last = (entry.get('last_name') or '').strip()
+        phone = entry.get('phone')
+        phone_normalized = normalize_phone(phone)
+        first_norm = normalize_name(first)
+        last_norm = normalize_name(last)
+        if not first_norm or not last_norm or not phone_normalized:
+            continue
+        records.append({
+            "first_name": first,
+            "last_name": last,
+            "phone": phone_normalized,
+            "first_norm": first_norm,
+            "last_norm": last_norm,
+            "phone_norm": phone_normalized
+        })
+    logger.info(f"Loaded {len(records)} event registration records from {path}")
+    return records
+
+def find_event_registration_entry(first_name: str, last_name: str, phone: str) -> Optional[dict]:
+    """Find event registration entry matching first name, last name, and phone."""
+    first_norm = normalize_name(first_name)
+    last_norm = normalize_name(last_name)
+    phone_norm = normalize_phone(phone)
+    if not (first_norm and last_norm and phone_norm):
+        return None
+    for record in get_event_registration_records():
+        if (
+            record["first_norm"] == first_norm
+            and record["last_norm"] == last_norm
+            and record["phone_norm"] == phone_norm
+        ):
+            return record
+    return None
+
 def format_birthdate(day: int, month: int, year: int) -> str:
     """Convert day, month, year to 'DD MMM YYYY' format"""
     month_names = {
@@ -182,6 +265,8 @@ def create_app() -> Flask:
     # Store DATABASE_URL in app config for access in routes
     app.config['DATABASE_URL'] = DATABASE_URL
     app.config['USE_POSTGRESQL'] = bool(DATABASE_URL)
+    # Voting session state - defaults to True (active)
+    app.config['VOTING_ACTIVE'] = True
     
     # Database configuration
     # If DATABASE_URL is set (PostgreSQL), configure SQLAlchemy
@@ -215,12 +300,24 @@ def create_app() -> Flask:
     
     if FRONTEND_URL:
         # Production: use FRONTEND_URL
-        CORS(app, supports_credentials=True, origins=[FRONTEND_URL])
+        CORS(app, supports_credentials=True, resources={
+            r"/api/*": {
+                "origins": [FRONTEND_URL],
+                "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+                "allow_headers": ["Content-Type", "X-Access-Code", "X-Admin-Code", "Authorization", "Cache-Control", "Pragma"]
+            }
+        })
         logger.info(f"CORS configured for frontend: {FRONTEND_URL}")
     elif allowed_origin_env:
         # Multiple origins from ALLOWED_ORIGIN
         origins = [o.strip() for o in allowed_origin_env.split(',') if o.strip()]
-        CORS(app, supports_credentials=True, resources={r"/api/*": {"origins": origins}})
+        CORS(app, supports_credentials=True, resources={
+            r"/api/*": {
+                "origins": origins,
+                "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+                "allow_headers": ["Content-Type", "X-Access-Code", "X-Admin-Code", "Authorization", "Cache-Control", "Pragma"]
+            }
+        })
         logger.info(f"CORS configured for origins: {origins}")
     elif flask_env == 'development' or flask_env == '':
         # Local development: allow common localhost origins
@@ -242,7 +339,7 @@ def create_app() -> Flask:
             r"/api/*": {
                 "origins": origins,
                 "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-                "allow_headers": ["Content-Type", "X-Access-Code", "X-Admin-Code", "Authorization"]
+                "allow_headers": ["Content-Type", "X-Access-Code", "X-Admin-Code", "Authorization", "Cache-Control", "Pragma"]
             }
         })
         logger.info("CORS configured for local development")
@@ -252,7 +349,13 @@ def create_app() -> Flask:
             "https://favvtech.github.io",
             "https://votingapp.ibaraysas.com",
         ]
-        CORS(app, supports_credentials=True, resources={r"/api/*": {"origins": origins}})
+        CORS(app, supports_credentials=True, resources={
+            r"/api/*": {
+                "origins": origins,
+                "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+                "allow_headers": ["Content-Type", "X-Access-Code", "X-Admin-Code", "Authorization", "Cache-Control", "Pragma"]
+            }
+        })
         logger.info(f"CORS configured for production origins: {origins}")
     
     # Load birthdates and initialize database on startup
@@ -326,79 +429,64 @@ def create_app() -> Flask:
     def signup():
         """Register new user"""
         data = request.get_json()
-        firstname = data.get('firstname', '').strip()
-        lastname = data.get('lastname', '').strip()
-        # phone and country_code are no longer required for login
-        phone = (data.get('phone') or '').strip()
-        country_code = (data.get('country_code') or '').strip()
-        email = data.get('email') or ''
-        email = email.strip() if email else None
+        firstname = (data.get('firstname') or '').strip()
+        lastname = (data.get('lastname') or '').strip()
+        phone_raw = (data.get('phone') or '').strip()
+        country_code_input = (data.get('country_code') or '+234').strip() or '+234'
+        email = (data.get('email') or '').strip()
+        email = email if email else None
         day = data.get('day')
         month = data.get('month')
         year = data.get('year')
         
-        # Combine name fields
         fullname = f"{firstname} {lastname}".strip()
         
-        # Validate required fields
-        if not firstname or not lastname or not phone or not all([day, month, year]):
+        if not firstname or not lastname or not phone_raw or not all([day, month, year]):
             return jsonify({"success": False, "message": "Please fill all required fields"}), 400
         
-        # Verify birthdate
         try:
             day = int(day)
             month = int(month)
             year = int(year)
-            
-            if not verify_birthdate(day, month, year):
-                return jsonify({
-                    "success": False,
-                    "message": "Sorry You Can't Sign Up On This Platform"
-                }), 403
-                
             formatted_birthdate = format_birthdate(day, month, year)
         except (ValueError, TypeError):
             return jsonify({"success": False, "message": "Invalid date format"}), 400
         
-        # Validate email if provided
         if email and '@' not in email:
             return jsonify({"success": False, "message": "Please enter a valid email address"}), 400
         
-        use_postgresql = app.config.get('USE_POSTGRESQL', False)
-        fullname_normalized = fullname.lower().strip()
-        full_phone = f"{country_code}{phone}"
+        normalized_phone = normalize_phone(f"{country_code_input}{phone_raw}")
+        if not normalized_phone:
+            return jsonify({"success": False, "message": "Invalid phone number"}), 400
         
+        registration_entry = find_event_registration_entry(firstname, lastname, normalized_phone)
+        if not registration_entry:
+            return jsonify({
+                "success": False,
+                "message": "You cant create an account on this platform. Please Contact The Admin For Assistance."
+            }), 403
+        
+        use_postgresql = app.config.get('USE_POSTGRESQL', False)
         try:
             if use_postgresql:
-                # Use SQLAlchemy for PostgreSQL
                 from models import db, User
                 from sqlalchemy import func
                 
-                # Check if user with same birthdate and fullname exists
-                existing_user = User.query.filter(
-                    db.func.lower(db.func.trim(User.fullname)) == fullname_normalized,
-                    User.birthdate == formatted_birthdate
-                ).first()
-                
-                # Get max birthdate_suffix for this birthdate
                 max_suffix_result = db.session.query(func.max(User.birthdate_suffix)).filter(
                     User.birthdate == formatted_birthdate
                 ).scalar()
                 birthdate_suffix = (max_suffix_result or 0) + 1
                 
-                # Check if phone already exists
-                phone_exists = User.query.filter_by(phone=full_phone).first()
+                phone_exists = User.query.filter_by(phone=normalized_phone).first()
                 if phone_exists:
-                    return jsonify({"success": False, "message": "Phone number already registered"}), 409
+                    return jsonify({"success": False, "message": "This phone number is already registered. Login To Continue."}), 409
                 
-                # Generate unique access code
                 access_code = generate_access_code_helper()
                 
-                # Create user
                 new_user = User(
                     fullname=fullname,
-                    phone=full_phone,
-                    country_code=country_code,
+                    phone=normalized_phone,
+                    country_code='+234',
                     email=email,
                     birthdate=formatted_birthdate,
                     birthdate_suffix=birthdate_suffix,
@@ -410,18 +498,9 @@ def create_app() -> Flask:
                 
                 logger.info(f"✅ User created in PostgreSQL: ID={user_id}, Name={fullname}, Code={access_code}")
             else:
-                # Use SQLite
                 conn = get_db()
                 cursor = conn.cursor()
                 
-                # Check if user with same birthdate and fullname exists
-                cursor.execute(
-                    "SELECT birthdate_suffix FROM users WHERE birthdate = ? AND LOWER(TRIM(fullname)) = ?",
-                    (formatted_birthdate, fullname_normalized)
-                )
-                existing_user = cursor.fetchone()
-                
-                # Determine birthdate_suffix
                 cursor.execute(
                     "SELECT MAX(birthdate_suffix) FROM users WHERE birthdate = ?",
                     (formatted_birthdate,)
@@ -429,19 +508,16 @@ def create_app() -> Flask:
                 max_suffix = cursor.fetchone()[0]
                 birthdate_suffix = (max_suffix or 0) + 1
                 
-                # Check if phone already exists
-                cursor.execute("SELECT id FROM users WHERE phone = ?", (full_phone,))
+                cursor.execute("SELECT id FROM users WHERE phone = ?", (normalized_phone,))
                 if cursor.fetchone():
                     conn.close()
-                    return jsonify({"success": False, "message": "Phone number already registered"}), 409
+                    return jsonify({"success": False, "message": "This phone number is already registered. Login To Continue."}), 409
                 
-                # Generate unique access code
                 access_code = generate_access_code_helper()
                 
-                # Create user
                 cursor.execute(
                     "INSERT INTO users (fullname, phone, country_code, email, birthdate, birthdate_suffix, access_code) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (fullname, full_phone, country_code, email, formatted_birthdate, birthdate_suffix, access_code)
+                    (fullname, normalized_phone, '+234', email, formatted_birthdate, birthdate_suffix, access_code)
                 )
                 user_id = cursor.lastrowid
                 conn.commit()
@@ -449,9 +525,8 @@ def create_app() -> Flask:
                 
                 logger.info(f"✅ User created in SQLite: ID={user_id}, Name={fullname}, Code={access_code}")
             
-            # Create session
             session['user_id'] = user_id
-            session['phone'] = full_phone
+            session['phone'] = normalized_phone
             session['fullname'] = fullname
             session['birthdate'] = formatted_birthdate
             session['access_code'] = access_code
@@ -462,7 +537,7 @@ def create_app() -> Flask:
                 "user": {
                     "id": user_id,
                     "fullname": fullname,
-                    "phone": full_phone,
+                    "phone": normalized_phone,
                     "email": email,
                     "access_code": access_code
                 }
@@ -481,65 +556,32 @@ def create_app() -> Flask:
     def login():
         """Login existing user"""
         data = request.get_json()
-        firstname = data.get('firstname', '').strip()
-        lastname = data.get('lastname', '').strip()
-        phone = data.get('phone', '').strip()
-        country_code = data.get('country_code', '+1').strip()
-        access_code = data.get('access_code', '').strip()
-        day = data.get('day')
-        month = data.get('month')
-        year = data.get('year')
+        firstname = (data.get('firstname') or '').strip()
+        lastname = (data.get('lastname') or '').strip()
+        access_code = (data.get('access_code') or '').strip().upper()
         
-        # Combine name fields
         fullname = f"{firstname} {lastname}".strip()
         
-        # Validate required fields
-        if not firstname or not lastname or not access_code or not all([day, month, year]):
+        if not firstname or not lastname or not access_code:
             return jsonify({"success": False, "message": "Please fill all required fields"}), 400
         
-        # Format birthdate
-        try:
-            day = int(day)
-            month = int(month)
-            year = int(year)
-            formatted_birthdate = format_birthdate(day, month, year)
-        except (ValueError, TypeError):
-            return jsonify({"success": False, "message": "Invalid date format"}), 400
-        
-        # Normalize fullname for comparison
-        fullname_normalized = fullname.lower().strip()
-        
-        # Phone not required; keep for backward compatibility if provided
-        full_phone = f"{country_code}{phone}" if (country_code and phone) else None
-        
+        fullname_normalized = normalize_name(fullname)
         use_postgresql = app.config.get('USE_POSTGRESQL', False)
         
         try:
             if use_postgresql:
-                # Use SQLAlchemy for PostgreSQL
                 from models import db, User
                 
-                # Find user by birthdate + fullname (case-insensitive)
                 user = User.query.filter(
-                    db.func.lower(db.func.trim(User.fullname)) == fullname_normalized,
-                    User.birthdate == formatted_birthdate
+                    db.func.lower(db.func.trim(User.fullname)) == fullname_normalized
                 ).first()
                 
                 if not user:
-                    # Check if birthdate exists but name doesn't match
-                    birthdate_exists = User.query.filter_by(birthdate=formatted_birthdate).first()
-                    if birthdate_exists:
-                        return jsonify({
-                            "success": False,
-                            "message": "Name doesn't match our records for this birthdate"
-                        }), 404
-                    else:
-                        return jsonify({
-                            "success": False,
-                            "message": "Sign up for an account"
-                        }), 404
+                    return jsonify({
+                        "success": False,
+                        "message": "Sign up for an account"
+                    }), 404
                 
-                # Verify access code
                 if user.access_code != access_code:
                     return jsonify({
                         "success": False,
@@ -551,41 +593,27 @@ def create_app() -> Flask:
                     'phone': user.phone,
                     'fullname': user.fullname,
                     'birthdate': user.birthdate,
-                    'access_code': user.access_code
+                    'access_code': user.access_code,
+                    'email': user.email
                 }
                 logger.info(f"✅ User logged in from PostgreSQL: ID={user.id}, Name={user.fullname}")
             else:
-                # Use SQLite
                 conn = get_db()
                 cursor = conn.cursor()
                 
-                # Find user by birthdate + fullname (case-insensitive)
                 cursor.execute(
-                    "SELECT * FROM users WHERE birthdate = ? AND LOWER(TRIM(fullname)) = ?",
-                    (formatted_birthdate, fullname_normalized)
+                    "SELECT * FROM users WHERE LOWER(TRIM(fullname)) = ?",
+                    (fullname_normalized,)
                 )
                 user = cursor.fetchone()
                 
                 if not user:
-                    # Check if birthdate exists but name doesn't match
-                    cursor.execute(
-                        "SELECT id FROM users WHERE birthdate = ?",
-                        (formatted_birthdate,)
-                    )
-                    if cursor.fetchone():
-                        conn.close()
-                        return jsonify({
-                            "success": False,
-                            "message": "Name doesn't match our records for this birthdate"
-                        }), 404
-                    else:
-                        conn.close()
-                        return jsonify({
-                            "success": False,
-                            "message": "Sign up for an account"
-                        }), 404
+                    conn.close()
+                    return jsonify({
+                        "success": False,
+                        "message": "Sign up for an account"
+                    }), 404
                 
-                # Verify access code
                 if user['access_code'] != access_code:
                     conn.close()
                     return jsonify({
@@ -601,7 +629,7 @@ def create_app() -> Flask:
             session['user_id'] = user_dict['id']
             session['phone'] = user_dict['phone']
             session['fullname'] = user_dict['fullname']
-            session['birthdate'] = user_dict['birthdate']
+            session['birthdate'] = user_dict.get('birthdate')
             session['access_code'] = user_dict['access_code']
             
             return jsonify({
@@ -696,11 +724,20 @@ def create_app() -> Flask:
     def logout():
         """Logout user"""
         session.clear()
-        return jsonify({"success": True, "message": "Logged out successfully"})
+        response = jsonify({"success": True, "message": "Logged out successfully"})
+        # Prevent caching of logout response and protect against back-button
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        return response
 
     @app.post("/api/vote")
     def cast_vote():
         """Cast a vote for a nominee in a category; one vote per user per category"""
+        # Check if voting session is active
+        if not app.config.get('VOTING_ACTIVE', True):
+            return jsonify({"success": False, "message": "Voting session is closed."}), 403
+        
         user_id = authenticate_request_helper()
         if not user_id:
             return jsonify({"success": False, "message": "Not authenticated"}), 401
@@ -1050,6 +1087,24 @@ def create_app() -> Flask:
         
         return None
 
+    def require_analyst():
+        """Helper to require analyst authentication - supports session and header fallback"""
+        # Check session first
+        if 'admin_authenticated' in session and session.get('admin_authenticated'):
+            role = session.get('admin_role', 'analyst')
+            if role == 'analyst':
+                return True
+        
+        # Header fallback for cross-site cookie issues (production)
+        code = (request.headers.get('X-Admin-Code') or '').strip().upper()
+        if code == ANALYST_CODE:
+            # Set session for future requests
+            session['admin_role'] = 'analyst'
+            session['admin_authenticated'] = True
+            return True
+        
+        return None
+
     @app.post("/api/admin/login")
     def admin_login():
         """Admin login with access code"""
@@ -1112,12 +1167,54 @@ def create_app() -> Flask:
         """Logout admin/analyst"""
         session.pop('admin_role', None)
         session.pop('admin_authenticated', None)
-        return jsonify({"success": True, "message": "Logged out successfully"})
+        response = jsonify({"success": True, "message": "Logged out successfully"})
+        # Prevent caching of logout response and protect against back-button
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        return response
+
+    @app.get("/api/admin/voting-status")
+    def get_voting_status():
+        """Get current voting session status (admin only)"""
+        if not require_admin():
+            return jsonify({"success": False, "message": "Admin access required"}), 403
+        return jsonify({
+            "success": True,
+            "voting_active": app.config.get('VOTING_ACTIVE', True)
+        })
+    
+    @app.post("/api/admin/voting-status")
+    def set_voting_status():
+        """Set voting session status (admin only)"""
+        if not require_admin():
+            return jsonify({"success": False, "message": "Admin access required"}), 403
+        data = request.get_json() or {}
+        voting_active = data.get('voting_active', True)
+        app.config['VOTING_ACTIVE'] = bool(voting_active)
+        logger.info(f"✅ Voting session {'activated' if voting_active else 'deactivated'} by admin")
+        return jsonify({
+            "success": True,
+            "voting_active": app.config['VOTING_ACTIVE'],
+            "message": f"Voting session {'activated' if voting_active else 'deactivated'}"
+        })
+    
+    @app.get("/api/voting-status")
+    def public_voting_status():
+        """Get current voting session status (public endpoint for user UI)"""
+        return jsonify({
+            "success": True,
+            "voting_active": app.config.get('VOTING_ACTIVE', True)
+        })
 
     @app.post("/api/admin/reset-votes")
     def reset_votes():
         """Admin utility: reset all votes to zero by clearing the votes table"""
-        if not require_admin():
+        logger.info(f"📥 Reset votes request received from {request.remote_addr}")
+        # Check admin authentication with logging
+        admin_check = require_admin()
+        if not admin_check:
+            logger.warning(f"❌ Reset votes: Admin access denied. Session: {session.get('admin_authenticated')}, Role: {session.get('admin_role')}, Header: {request.headers.get('X-Admin-Code', 'not provided')}")
             return jsonify({"success": False, "message": "Admin access required"}), 403
         try:
             use_postgresql = app.config.get('USE_POSTGRESQL', False)
@@ -1144,9 +1241,9 @@ def create_app() -> Flask:
 
     @app.get("/api/admin/users")
     def admin_get_users():
-        """Get all users with their votes (admin only)"""
-        if not require_admin():
-            return jsonify({"success": False, "message": "Admin access required"}), 403
+        """Get all users with their votes (admin and analyst)"""
+        if not require_admin() and not require_analyst():
+            return jsonify({"success": False, "message": "Admin or analyst access required"}), 403
         
         try:
             use_postgresql = app.config.get('USE_POSTGRESQL', False)
@@ -1440,6 +1537,225 @@ def create_app() -> Flask:
         except Exception as e:
             print(f"Error adding birth date: {e}")
             return jsonify({"success": False, "message": "Failed to add birth date"}), 500
+
+    @app.post("/api/admin/event-registration-users")
+    def admin_add_event_registration_user():
+        """Add a new event registration user entry (admin only)"""
+        if not require_admin():
+            return jsonify({"success": False, "message": "Admin access required"}), 403
+
+        data = request.get_json() or {}
+        first_name = (data.get('first_name') or '').strip()
+        last_name = (data.get('last_name') or '').strip()
+        phone_input = (data.get('phone') or '').strip()
+
+        if not first_name or not last_name or not phone_input:
+            return jsonify({"success": False, "message": "Please provide first name, last name, and phone number"}), 400
+
+        normalized_phone = normalize_phone(phone_input)
+        if not normalized_phone:
+            return jsonify({"success": False, "message": "Invalid phone number"}), 400
+
+        first_norm = normalize_name(first_name)
+        last_norm = normalize_name(last_name)
+        phone_norm = normalized_phone
+
+        existing_records = get_event_registration_records()
+        if any(rec["phone_norm"] == phone_norm for rec in existing_records):
+            return jsonify({"success": False, "message": "Phone number already exists in registration list"}), 409
+
+        if any(rec["first_norm"] == first_norm and rec["last_norm"] == last_norm for rec in existing_records):
+            return jsonify({"success": False, "message": "A registration entry for this name already exists"}), 409
+
+        payload_entry = {
+            "first_name": first_name,
+            "last_name": last_name,
+            "phone": normalized_phone
+        }
+
+        json_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'event_registration_users.json'))
+        csv_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'event_registration_users.csv'))
+
+        try:
+            # Update JSON file
+            json_records = []
+            if os.path.exists(json_path) and os.path.getsize(json_path) > 0:
+                with open(json_path, 'r', encoding='utf-8') as jf:
+                    try:
+                        json_records = json.load(jf)
+                    except json.JSONDecodeError:
+                        json_records = []
+
+            json_records.append(payload_entry)
+            with open(json_path, 'w', encoding='utf-8') as jf:
+                json.dump(json_records, jf, ensure_ascii=False, indent=2)
+
+            # Update CSV file
+            write_header = not os.path.exists(csv_path) or os.path.getsize(csv_path) == 0
+            with open(csv_path, 'a', newline='', encoding='utf-8') as cf:
+                writer = csv.writer(cf)
+                if write_header:
+                    writer.writerow(["first_name", "last_name", "phone"])
+                writer.writerow([first_name, last_name, normalized_phone])
+
+            # Refresh cached records
+            get_event_registration_records.cache_clear()
+
+            logger.info("✅ Added event registration user via admin: %s %s (%s)", first_name, last_name, normalized_phone)
+            return jsonify({"success": True, "message": "Registration record added successfully"})
+        except Exception as exc:
+            logger.error("❌ Failed to add event registration user: %s", exc, exc_info=True)
+            return jsonify({"success": False, "message": "Failed to add registration record"}), 500
+
+    @app.post("/api/admin/event-registration-users/delete")
+    def admin_delete_event_registration_user():
+        """Delete an event registration user entry and their account if it exists (admin only)"""
+        if not require_admin():
+            return jsonify({"success": False, "message": "Admin access required"}), 403
+
+        data = request.get_json() or {}
+        first_name = (data.get('first_name') or '').strip()
+        last_name = (data.get('last_name') or '').strip()
+        phone_input = (data.get('phone') or '').strip()
+
+        if not first_name or not last_name or not phone_input:
+            return jsonify({"success": False, "message": "Please provide first name, last name, and phone number"}), 400
+
+        normalized_phone = normalize_phone(phone_input)
+        if not normalized_phone:
+            return jsonify({"success": False, "message": "Invalid phone number"}), 400
+
+        first_norm = normalize_name(first_name)
+        last_norm = normalize_name(last_name)
+        phone_norm = normalized_phone
+
+        json_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'event_registration_users.json'))
+        csv_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'event_registration_users.csv'))
+
+        try:
+            # Remove from JSON file
+            json_records = []
+            found_in_json = False
+            if os.path.exists(json_path) and os.path.getsize(json_path) > 0:
+                with open(json_path, 'r', encoding='utf-8') as jf:
+                    try:
+                        json_records = json.load(jf)
+                    except json.JSONDecodeError:
+                        json_records = []
+                
+                # Filter out the matching record
+                original_count = len(json_records)
+                json_records = [
+                    rec for rec in json_records
+                    if not (
+                        rec.get("phone", "").strip() == phone_norm or
+                        (normalize_name(rec.get("first_name", "").strip()) == first_norm and
+                         normalize_name(rec.get("last_name", "").strip()) == last_norm)
+                    )
+                ]
+                found_in_json = len(json_records) < original_count
+                
+                with open(json_path, 'w', encoding='utf-8') as jf:
+                    json.dump(json_records, jf, ensure_ascii=False, indent=2)
+
+            # Remove from CSV file
+            found_in_csv = False
+            if os.path.exists(csv_path) and os.path.getsize(csv_path) > 0:
+                rows = []
+                with open(csv_path, 'r', encoding='utf-8', newline='') as cf:
+                    reader = csv.reader(cf)
+                    header = next(reader, None)
+                    if header:
+                        rows.append(header)
+                    for row in reader:
+                        if len(row) >= 3:
+                            row_phone = normalize_phone(row[2].strip()) if row[2] else ""
+                            row_first = normalize_name(row[0].strip()) if row[0] else ""
+                            row_last = normalize_name(row[1].strip()) if row[1] else ""
+                            if not (
+                                row_phone == phone_norm or
+                                (row_first == first_norm and row_last == last_norm)
+                            ):
+                                rows.append(row)
+                            else:
+                                found_in_csv = True
+                        else:
+                            rows.append(row)
+                
+                with open(csv_path, 'w', encoding='utf-8', newline='') as cf:
+                    writer = csv.writer(cf)
+                    writer.writerows(rows)
+
+            # Delete user account from database if it exists
+            account_deleted = False
+            use_postgresql = app.config.get('USE_POSTGRESQL', False)
+            if use_postgresql:
+                from models import db, User
+                user = User.query.filter_by(phone=phone_norm).first()
+                if not user:
+                    # Try by name match
+                    user = User.query.filter(
+                        db.func.lower(User.firstname) == first_norm.lower(),
+                        db.func.lower(User.lastname) == last_norm.lower()
+                    ).first()
+                if user:
+                    # Delete user's votes first
+                    from models import Vote
+                    Vote.query.filter_by(user_id=user.id).delete()
+                    db.session.delete(user)
+                    db.session.commit()
+                    account_deleted = True
+                    logger.info(f"✅ Deleted user account from PostgreSQL: {user.firstname} {user.lastname} ({phone_norm})")
+            else:
+                # SQLite
+                conn = get_db()
+                cur = conn.cursor()
+                # Find user by phone or name
+                cur.execute("SELECT id FROM users WHERE phone = ?", (phone_norm,))
+                user_row = cur.fetchone()
+                if not user_row:
+                    cur.execute("SELECT id FROM users WHERE LOWER(firstname) = LOWER(?) AND LOWER(lastname) = LOWER(?)", 
+                               (first_name, last_name))
+                    user_row = cur.fetchone()
+                if user_row:
+                    user_id = user_row[0]
+                    # Delete votes
+                    cur.execute("DELETE FROM votes WHERE user_id = ?", (user_id,))
+                    # Delete user
+                    cur.execute("DELETE FROM users WHERE id = ?", (user_id,))
+                    conn.commit()
+                    account_deleted = True
+                    logger.info(f"✅ Deleted user account from SQLite: ID {user_id} ({phone_norm})")
+                conn.close()
+
+            # Refresh cached records
+            get_event_registration_records.cache_clear()
+
+            if not found_in_json and not found_in_csv:
+                return jsonify({"success": False, "message": "User does not exist"}), 404
+
+            message = "Registration record deleted successfully"
+            if account_deleted:
+                message += " and user account removed"
+            
+            logger.info(f"✅ Deleted event registration user: {first_name} {last_name} ({phone_norm})")
+            return jsonify({"success": True, "message": message})
+        except Exception as exc:
+            logger.error(f"❌ Failed to delete event registration user: {exc}", exc_info=True)
+            return jsonify({"success": False, "message": "Failed to delete registration record"}), 500
+
+    @app.get("/api/admin/event-registration-users/count")
+    def admin_get_event_registration_users_count():
+        """Get total count of event registration users (admin and analyst)"""
+        if not require_admin() and not require_analyst():
+            return jsonify({"success": False, "message": "Admin or analyst access required"}), 403
+        
+        try:
+            records = get_event_registration_records()
+            return jsonify({"success": True, "count": len(records)})
+        except Exception as e:
+            logger.error(f"❌ Error getting registration users count: {e}", exc_info=True)
+            return jsonify({"success": False, "message": "Failed to get user count"}), 500
 
     @app.post("/api/admin/nominees")
     def admin_add_nominee():

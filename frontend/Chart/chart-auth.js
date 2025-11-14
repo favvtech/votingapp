@@ -7,27 +7,22 @@
 
     async function checkAdminAccess() {
         try {
-            const headers = {};
-            try {
-                const code = sessionStorage.getItem('admin_code');
-                if (code) headers['X-Admin-Code'] = code;
-            } catch(_) {}
             const response = await fetch(`${API_BASE}/api/admin/check-session`, {
                 method: 'GET',
                 credentials: 'include',
-                headers: headers
+                cache: 'no-store'
             });
             const data = await response.json();
             
             if (!data.logged_in) {
-                // Redirect to admin login
-                window.location.href = '../admin/login.html';
+                // Redirect to admin login - use replace to prevent back button
+                window.location.replace('../admin/login.html');
                 return false;
             }
             return true;
         } catch (error) {
             console.error('Auth check error:', error);
-            window.location.href = '../admin/login.html';
+            window.location.replace('../admin/login.html');
             return false;
         }
     }

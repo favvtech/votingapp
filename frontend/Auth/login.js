@@ -49,11 +49,9 @@
 
         // Initialize day dropdowns
         populateDayDropdown('birthDayDropdown', 31);
-        populateDayDropdown('loginBirthDayDropdown', 31);
 
         // Initialize year dropdowns
         populateYearDropdown('birthYearDropdown');
-        populateYearDropdown('loginBirthYearDropdown');
 
         // Initialize birthdate combo functionality
         function initBirthdateCombo(inputId, toggleId, dropdownId, hiddenInputId, type = 'day') {
@@ -234,10 +232,6 @@
         initBirthdateCombo('birthDayInput', 'birthDayToggle', 'birthDayDropdown', 'birthDay', 'day');
         initBirthdateCombo('birthMonthInput', 'birthMonthToggle', 'birthMonthDropdown', 'birthMonth', 'month');
         initBirthdateCombo('birthYearInput', 'birthYearToggle', 'birthYearDropdown', 'birthYear', 'year');
-        
-        initBirthdateCombo('loginBirthDayInput', 'loginBirthDayToggle', 'loginBirthDayDropdown', 'loginBirthDay', 'day');
-        initBirthdateCombo('loginBirthMonthInput', 'loginBirthMonthToggle', 'loginBirthMonthDropdown', 'loginBirthMonth', 'month');
-        initBirthdateCombo('loginBirthYearInput', 'loginBirthYearToggle', 'loginBirthYearDropdown', 'loginBirthYear', 'year');
     }
 
     function updateDaysForSelectedMonth() {
@@ -287,53 +281,7 @@
             }
         }
 
-        // Update login day dropdown
-        const loginBirthMonthInput = document.getElementById('loginBirthMonth');
-        const loginBirthYearInput = document.getElementById('loginBirthYear');
-        const loginBirthDayDropdown = document.getElementById('loginBirthDayDropdown');
-        const loginBirthDayValue = document.getElementById('loginBirthDayValue');
-        const loginBirthDayInput = document.getElementById('loginBirthDay');
-
-        if (loginBirthMonthInput && loginBirthYearInput && loginBirthDayDropdown) {
-            const month = parseInt(loginBirthMonthInput.value);
-            const year = parseInt(loginBirthYearInput.value);
-            if (month && year) {
-                const daysInMonth = new Date(year, month, 0).getDate();
-                const currentDay = parseInt(loginBirthDayInput?.value || 0);
-                
-                loginBirthDayDropdown.innerHTML = '';
-                for (let i = 1; i <= daysInMonth; i++) {
-                    const item = document.createElement('button');
-                    item.type = 'button';
-                    item.className = 'birthdate-item';
-                    item.dataset.value = i;
-                    item.textContent = i;
-                    loginBirthDayDropdown.appendChild(item);
-                    
-                    // Attach click handler
-                    item.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        const value = item.dataset.value;
-                        if (loginBirthDayInput) loginBirthDayInput.value = value;
-                        if (loginBirthDayValue) loginBirthDayValue.textContent = i;
-                        const parentEl = item.closest('.birthdate-dropdown-parent');
-                        if (parentEl) {
-                            parentEl.classList.remove('is-open');
-                            const toggle = parentEl.querySelector('.birthdate-toggle');
-                            if (toggle) toggle.setAttribute('aria-expanded', 'false');
-                        }
-                    });
-                }
-                
-                // Reset if current day is invalid
-                if (currentDay > daysInMonth && loginBirthDayInput && loginBirthDayValue) {
-                    loginBirthDayInput.value = '';
-                    loginBirthDayValue.textContent = 'Day';
-                }
-            }
-        }
     }
-
 
     // Initialize birthdate dropdowns on load
     initBirthdateDropdowns();
@@ -450,13 +398,7 @@
 
             const firstname = document.getElementById('loginFirstname').value.trim();
             const lastname = document.getElementById('loginLastname').value.trim();
-            // Phone removed from login
-            const phone = '';
-            const countryCode = '';
             const accessCode = document.getElementById('loginAccessCode').value.trim().toUpperCase();
-            const day = parseInt(document.getElementById('loginBirthDay').value) || parseInt(document.getElementById('loginBirthDayInput')?.value);
-            const month = parseInt(document.getElementById('loginBirthMonth').value) || parseInt(document.getElementById('loginBirthMonthInput')?.value);
-            const year = parseInt(document.getElementById('loginBirthYear').value) || parseInt(document.getElementById('loginBirthYearInput')?.value);
             const submitBtn = document.getElementById('loginSubmit');
 
             // Validate required fields
@@ -472,10 +414,6 @@
             // no phone required for login
             if (!accessCode || accessCode.length !== 6) {
                 showError('loginAccessCode', 'Access code is required (6 characters: 4 letters + 2 numbers)');
-                hasError = true;
-            }
-            if (!day || !month || !year) {
-                showError('loginBirthdate', 'Please select your birthdate');
                 hasError = true;
             }
 
@@ -495,12 +433,7 @@
                     body: JSON.stringify({
                         firstname,
                         lastname,
-                        phone,
-                        country_code: countryCode,
-                        access_code: accessCode,
-                        day,
-                        month,
-                        year
+                        access_code: accessCode
                     })
                 });
 
@@ -515,32 +448,22 @@
                         localStorage.removeItem('votes_reset');
                     } catch (_) {}
                     
-                    // Store user data in localStorage for frontend access
-                    if (data.user) {
-                        localStorage.setItem('user', JSON.stringify(data.user));
-                        // Also store access code separately for easy retrieval
-                        if (data.user.access_code) {
-                            localStorage.setItem('user_access_code', data.user.access_code);
+                    // Show access code if available (no localStorage storage)
+                    if (data.user && data.user.access_code) {
                             showAccessCode(data.user.access_code);
                         }
-                    }
                     // Redirect to Vote page after short delay - use replace to prevent back button issues
                     setTimeout(() => {
                         window.location.replace('../Vote/index.html');
                     }, 1500);
                 } else {
-                    if (data.message && data.message.includes('Name doesn\'t match')) {
-                        showError('loginFirstname', data.message);
-                    } else if (data.message && data.message.includes('Sign up for an account')) {
-                        // phone removed: show general message instead
-                        showMessage(data.message, 'error');
-                        showMessage(data.message, 'error');
-                    } else if (data.message && data.message.includes('Access code')) {
+                    if (data.message && data.message.toLowerCase().includes('access code')) {
                         showError('loginAccessCode', data.message);
+                    } else if (data.message && data.message.toLowerCase().includes('sign up')) {
+                        showMessage(data.message, 'error');
                     } else {
-                        showMessage(data.message || 'Login failed. Please try again.', 'error');
-                    }
                     showMessage(data.message || 'Login failed. Please try again.', 'error');
+                    }
                 }
             } catch (error) {
                 console.error('Login error:', error);
@@ -603,26 +526,6 @@
             setLoading(submitBtn, true);
 
             try {
-                // First verify birthdate
-                const verifyResponse = await fetch(`${API_BASE}/api/verify-birthdate`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    credentials: 'include',
-                    body: JSON.stringify({ day, month, year })
-                });
-
-                const verifyData = await verifyResponse.json();
-
-                if (!verifyResponse.ok || !verifyData.allowed) {
-                    showError('birthdate', verifyData.message || 'Sorry You Can\'t Sign Up On This Platform');
-                    showMessage(verifyData.message || 'Sorry You Can\'t Sign Up On This Platform', 'error');
-                    setLoading(submitBtn, false);
-                    return;
-                }
-
-                // If birthdate is valid, proceed with signup
                 const response = await fetch(`${API_BASE}/api/signup`, {
                     method: 'POST',
                     headers: {
@@ -652,23 +555,20 @@
                         localStorage.removeItem('votes_reset');
                     } catch (_) {}
                     
-                    // Store user data in localStorage
-                    if (data.user) {
-                        localStorage.setItem('user', JSON.stringify(data.user));
-                        // Also store access code separately for easy retrieval
-                        if (data.user.access_code) {
-                            localStorage.setItem('user_access_code', data.user.access_code);
+                    // Show access code if available (no localStorage storage for auth)
+                    if (data.user && data.user.access_code) {
                             showAccessCode(data.user.access_code);
                         }
-                    }
                     // Redirect to Vote page after short delay - use replace to prevent back button issues
+                    // Give enough time for session cookie to be set
                     setTimeout(() => {
                         window.location.replace('../Vote/index.html');
-                    }, 3000); // Give time to see access code
+                    }, 2000); // Reduced to 2 seconds but still enough for session
                 } else {
-                    if (data.message && data.message.includes("Can't Sign Up")) {
-                        showError('birthdate', data.message);
-                    } else if (data.message && data.message.includes('phone')) {
+                    if (data.message && data.message.toLowerCase().includes('phone')) {
+                        showError('signupPhone', data.message);
+                    } else if (data.message && data.message.toLowerCase().includes("cant create an account")) {
+                        showError('signupFirstname', data.message);
                         showError('signupPhone', data.message);
                     } else if (data.message && data.message.includes('email')) {
                         showError('signupEmail', data.message);
@@ -707,7 +607,6 @@
                     localStorage.removeItem('cached_votes');
                     localStorage.removeItem('votes_reset');
                 } catch (_) {}
-                localStorage.setItem('user', JSON.stringify(data.user));
                 window.location.replace('../Vote/index.html');
             }
         } catch (error) {
@@ -715,6 +614,40 @@
             // Continue with login/signup if check fails
         }
     }
+
+    // Check for inactivity logout message
+    (function() {
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('inactivity') === '1') {
+            // Show inactivity message
+            const messageDiv = document.createElement('div');
+            messageDiv.style.cssText = `
+                position: fixed;
+                top: 20px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: var(--warning);
+                color: white;
+                padding: 16px 24px;
+                border-radius: 8px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+                z-index: 10000;
+                font-weight: 600;
+                text-align: center;
+                max-width: 90%;
+            `;
+            messageDiv.textContent = 'You were logged out due to inactivity.';
+            document.body.appendChild(messageDiv);
+            
+            // Remove message after 5 seconds
+            setTimeout(() => {
+                messageDiv.remove();
+            }, 5000);
+            
+            // Clean URL
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+    })();
 
     // Check session on page load
     checkSession();
@@ -875,11 +808,9 @@
     }
 
     // Initialize country code combos
-    initCountryCodeCombo('loginCountryCodeInput', 'loginCountryCodeToggle', 'loginCountryCodeDropdown', 'loginCountryCode');
     initCountryCodeCombo('signupCountryCodeInput', 'signupCountryCodeToggle', 'signupCountryCodeDropdown', 'signupCountryCode');
 
     // Attach phone masks
-    attachPhoneMask('loginPhone', 'loginCountryCode');
     attachPhoneMask('signupPhone', 'signupCountryCode');
 
     // When country code changes via dropdown, reformat phone immediately
@@ -933,7 +864,7 @@
         });
     }
 
-    // Show access code after successful signup
+    // Show access code after successful signup (no localStorage storage)
     function showAccessCode(code) {
         if (accessCodeCircle && acCodeDisplay) {
             acCodeDisplay.textContent = code;
@@ -943,17 +874,6 @@
                 accessCodeCircle.classList.add('show-popup');
             }, 500);
         }
-        // Store in localStorage
-        if (code) {
-            localStorage.setItem('user_access_code', code);
-        }
-    }
-
-    // Check if user has access code in localStorage
-    const storedAccessCode = localStorage.getItem('user_access_code');
-    if (storedAccessCode && accessCodeCircle && acCodeDisplay) {
-        acCodeDisplay.textContent = storedAccessCode;
-        accessCodeCircle.style.display = 'block';
     }
 
     // Access code input - auto uppercase and limit to 6 characters (4 letters + 2 numbers)

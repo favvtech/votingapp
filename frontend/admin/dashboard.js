@@ -4,50 +4,39 @@
     // API_BASE: in production set window.API_BASE in HTML to your backend URL
     const API_BASE = (typeof window !== 'undefined' && window.API_BASE) || window.location.origin;
 
-    let currentRole = sessionStorage.getItem('admin_role') || 'admin';
+    let currentRole = 'admin'; // No sessionStorage for auth - get from backend
     let allUsers = [];
     let categoriesData = window.CATEGORIES || [];
+    let inactivityTimer = null;
+    const INACTIVITY_TIMEOUT = 30 * 60 * 1000; // 30 minutes in milliseconds
 
-    // Helper function to get admin headers for API requests
+    // Helper function to get admin headers for API requests (no sessionStorage for auth)
     function getAdminHeaders() {
-        const headers = {
+        return {
             'Content-Type': 'application/json'
         };
-        try {
-            const code = sessionStorage.getItem('admin_code');
-            if (code) {
-                headers['X-Admin-Code'] = code;
-            }
-        } catch(_) {}
-        return headers;
     }
 
-    // Check admin/analyst session on load
+    // Check admin/analyst session on load (no sessionStorage for auth)
     async function checkAdminSession() {
         try {
-            const headers = {};
-            try {
-                const code = sessionStorage.getItem('admin_code');
-                if (code) headers['X-Admin-Code'] = code;
-            } catch(_) {}
             const response = await fetch(`${API_BASE}/api/admin/check-session`, {
                 method: 'GET',
                 credentials: 'include',
-                headers
+                cache: 'no-store'
             });
             const data = await response.json();
             
             if (!data.logged_in) {
-                window.location.href = 'login.html';
+                window.location.replace('login.html');
                 return;
             }
 
             currentRole = data.role || currentRole;
-            sessionStorage.setItem('admin_role', currentRole);
             updateUIForRole();
         } catch (error) {
             console.error('Session check error:', error);
-            window.location.href = 'login.html';
+            window.location.replace('login.html');
         }
     }
 
@@ -56,7 +45,7 @@
         const userName = document.getElementById('userName');
         const navUsers = document.getElementById('navUsers');
         const navVotes = document.getElementById('navVotes');
-        const navBirthdates = document.getElementById('navBirthdates');
+        const navRegistration = document.getElementById('navRegistration');
         const navNominees = document.getElementById('navNominees');
 
         if (roleBadge) {
@@ -71,7 +60,7 @@
         if (currentRole === 'analyst') {
             if (navUsers) navUsers.style.display = 'none';
             if (navVotes) navVotes.style.display = 'none';
-            if (navBirthdates) navBirthdates.style.display = 'none';
+            if (navRegistration) navRegistration.style.display = 'none';
             if (navNominees) navNominees.style.display = 'none';
         }
     }
@@ -141,6 +130,7 @@
         initNavigation();
         initUserDropdown();
         await loadAnalytics();
+        initInactivityDetection();
         
         // Make Total Votes card clickable
         const totalVotesCard = document.getElementById('totalVotesCard');
@@ -371,8 +361,8 @@
                     headers: getAdminHeaders()
                 });
                 if (votesResponse.ok) {
-                    const votesData = await votesResponse.json();
-                    if (votesData.success) {
+            const votesData = await votesResponse.json();
+            if (votesData.success) {
                         const totalVotesEl = document.getElementById('totalVotes');
                         if (totalVotesEl) {
                             totalVotesEl.textContent = votesData.total || 0;
@@ -393,8 +383,8 @@
                 if (totalVotesEl) totalVotesEl.textContent = '0';
             }
 
-            // Get total users (admin only)
-            if (currentRole === 'admin') {
+            // Get total users (admin and analyst - same count)
+            if (currentRole === 'admin' || currentRole === 'analyst') {
                 try {
                     const usersTimestamp = Date.now();
                     const usersResponse = await fetch(`${API_BASE}/api/admin/users?t=${usersTimestamp}`, {
@@ -402,14 +392,17 @@
                         headers: getAdminHeaders()
                     });
                     if (usersResponse.ok) {
-                        const usersData = await usersResponse.json();
+                    const usersData = await usersResponse.json();
                         if (usersData.success && usersData.users) {
-                            const totalUsers = usersData.users.length;
+                        const totalUsers = usersData.users.length;
                             const totalUsersEl = document.getElementById('totalUsers');
                             if (totalUsersEl) {
                                 totalUsersEl.textContent = totalUsers;
                             }
-                            allUsers = usersData.users;
+                            // Only store allUsers for admin (analyst doesn't need full user list)
+                            if (currentRole === 'admin') {
+                        allUsers = usersData.users;
+                            }
                         } else {
                             console.error('Failed to get users:', usersData);
                             const totalUsersEl = document.getElementById('totalUsers');
@@ -425,10 +418,6 @@
                     const totalUsersEl = document.getElementById('totalUsers');
                     if (totalUsersEl) totalUsersEl.textContent = '0';
                 }
-            } else {
-                // For analyst, show placeholder
-                const totalUsersEl = document.getElementById('totalUsers');
-                if (totalUsersEl) totalUsersEl.textContent = '-';
             }
 
             // Load distribution
@@ -987,6 +976,269 @@
 
     // Vote Management
     function setupAdminHandlers() {
+        // Voting Session Toggle
+        const votingToggle = document.getElementById('votingSessionToggle');
+        const votingLabel = document.getElementById('votingSessionLabel');
+        
+        async function loadVotingStatus() {
+            try {
+                const response = await fetch(`${API_BASE}/api/admin/voting-status`, {
+                    method: 'GET',
+                    credentials: 'include',
+                    headers: getAdminHeaders(),
+                    cache: 'no-store'
+                });
+                const data = await response.json();
+                if (data.success !== undefined && votingToggle) {
+                    // Update toggle state to match server
+                    votingToggle.checked = data.voting_active;
+                    if (votingLabel) {
+                        votingLabel.textContent = data.voting_active ? 'ON' : 'OFF';
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading voting status:', error);
+            }
+        }
+        
+        async function updateVotingStatus(active) {
+            try {
+                const response = await fetch(`${API_BASE}/api/admin/voting-status`, {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: getAdminHeaders(),
+                    body: JSON.stringify({ voting_active: active })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    // Immediately update toggle state
+                    if (votingToggle) {
+                        votingToggle.checked = active;
+                    }
+                    if (votingLabel) {
+                        votingLabel.textContent = active ? 'ON' : 'OFF';
+                    }
+                    showToast(data.message || `Voting session ${active ? 'activated' : 'deactivated'}`, 'success');
+                    
+                    // Reload status to ensure consistency
+                    setTimeout(() => {
+                        loadVotingStatus();
+                    }, 500);
+                } else {
+                    showToast(data.message || 'Failed to update voting status', 'error');
+                    // Revert toggle
+                    if (votingToggle) {
+                        votingToggle.checked = !active;
+                    }
+                    // Reload status
+                    loadVotingStatus();
+                }
+            } catch (error) {
+                console.error('Error updating voting status:', error);
+                showToast('Failed to update voting status', 'error');
+                // Revert toggle
+                if (votingToggle) {
+                    votingToggle.checked = !active;
+                }
+                // Reload status
+                loadVotingStatus();
+            }
+        }
+        
+        if (votingToggle) {
+            // Load initial status
+            loadVotingStatus();
+            
+            // Store pending state
+            let pendingToggleState = null;
+            const authModal = document.getElementById('votingToggleAuthModal');
+            const accessCodeInput = document.getElementById('votingToggleAccessCode');
+            const toggleActionText = document.getElementById('toggleActionText');
+            const toggleError = document.getElementById('votingToggleError');
+            const confirmBtn = document.getElementById('confirmVotingToggleBtn');
+            const cancelBtn = document.getElementById('cancelVotingToggleBtn');
+            
+            // Show auth modal before toggling
+            function showAuthModal(newState) {
+                pendingToggleState = newState;
+                const action = newState ? 'activate' : 'deactivate';
+                if (toggleActionText) {
+                    toggleActionText.textContent = action;
+                }
+                if (accessCodeInput) {
+                    accessCodeInput.value = '';
+                    accessCodeInput.type = 'password'; // Reset to password type
+                    accessCodeInput.focus();
+                }
+                // Reset visibility toggle icon
+                const accessCodeToggleIcon = document.getElementById('votingToggleAccessCodeToggleIcon');
+                if (accessCodeToggleIcon) {
+                    accessCodeToggleIcon.innerHTML = `
+                        <path d="M12 5C7 5 2.73 8.11 1 12c1.73 3.89 6 7 11 7s9.27-3.11 11-7c-1.73-3.89-6-7-11-7Z" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z" stroke-linecap="round" stroke-linejoin="round"/>
+                    `;
+                }
+                if (toggleError) {
+                    toggleError.style.display = 'none';
+                    toggleError.textContent = '';
+                }
+                if (authModal) {
+                    authModal.style.display = 'flex';
+                }
+            }
+            
+            // Hide auth modal
+            function hideAuthModal() {
+                const previousState = pendingToggleState;
+                pendingToggleState = null;
+                if (authModal) {
+                    authModal.style.display = 'none';
+                }
+                if (accessCodeInput) {
+                    accessCodeInput.value = '';
+                }
+                if (toggleError) {
+                    toggleError.style.display = 'none';
+                    toggleError.textContent = '';
+                }
+                // Revert toggle to original state
+                if (votingToggle && previousState !== null) {
+                    votingToggle.checked = !previousState;
+                }
+            }
+            
+            // Verify access code and toggle
+            async function verifyAndToggle() {
+                const code = accessCodeInput ? accessCodeInput.value.trim().toUpperCase() : '';
+                if (!code) {
+                    if (toggleError) {
+                        toggleError.textContent = 'Please enter your admin access code';
+                        toggleError.style.display = 'block';
+                    }
+                    return;
+                }
+                
+                try {
+                    // Verify admin access code
+                    const verifyResponse = await fetch(`${API_BASE}/api/admin/login`, {
+                        method: 'POST',
+                        credentials: 'include',
+                        headers: getAdminHeaders(),
+                        body: JSON.stringify({ access_code: code })
+                    });
+                    const verifyData = await verifyResponse.json();
+                    
+                    if (verifyResponse.ok && verifyData.success) {
+                        // Access code verified, proceed with toggle
+                        const targetState = pendingToggleState;
+                        hideAuthModal();
+                        // Update toggle immediately before API call
+                        if (votingToggle) {
+                            votingToggle.checked = targetState;
+                        }
+                        if (votingLabel) {
+                            votingLabel.textContent = targetState ? 'ON' : 'OFF';
+                        }
+                        await updateVotingStatus(targetState);
+                    } else {
+                        // Invalid access code
+                        if (toggleError) {
+                            toggleError.textContent = verifyData.message || 'Invalid admin access code';
+                            toggleError.style.display = 'block';
+                        }
+                        if (accessCodeInput) {
+                            accessCodeInput.value = '';
+                            accessCodeInput.focus();
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error verifying access code:', error);
+                    if (toggleError) {
+                        toggleError.textContent = 'Error verifying access code. Please try again.';
+                        toggleError.style.display = 'block';
+                    }
+                }
+            }
+            
+            // Password visibility toggle for access code
+            const accessCodeToggleBtn = document.getElementById('votingToggleAccessCodeToggle');
+            const accessCodeToggleIcon = document.getElementById('votingToggleAccessCodeToggleIcon');
+            if (accessCodeToggleBtn && accessCodeInput && accessCodeToggleIcon) {
+                accessCodeToggleBtn.addEventListener('click', () => {
+                    const isPassword = accessCodeInput.type === 'password';
+                    accessCodeInput.type = isPassword ? 'text' : 'password';
+                    // Update icon
+                    if (isPassword) {
+                        // Show eye-off icon
+                        accessCodeToggleIcon.innerHTML = `
+                            <path d="M3 3l18 18" stroke="currentColor" stroke-linecap="round"/>
+                            <path d="M10.58 10.58A4 4 0 0 0 12 16a4 4 0 0 0 3.42-6.42M17.94 17.94C16.22 19.23 14.18 20 12 20 7 20 2.73 16.89 1 13c.56-1.25 1.38-2.41 2.4-3.43M6.06 6.06C7.78 4.77 9.82 4 12 4c5 0 9.27 3.11 11 7-.48 1.08-1.13 2.1-1.92 3" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+                        `;
+                    } else {
+                        // Show eye icon
+                        accessCodeToggleIcon.innerHTML = `
+                            <path d="M12 5C7 5 2.73 8.11 1 12c1.73 3.89 6 7 11 7s9.27-3.11 11-7c-1.73-3.89-6-7-11-7Z" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z" stroke-linecap="round" stroke-linejoin="round"/>
+                        `;
+                    }
+                });
+            }
+            
+            // Update on toggle - show auth modal first
+            votingToggle.addEventListener('change', (e) => {
+                const newState = e.target.checked;
+                // Prevent immediate toggle, show modal first
+                e.preventDefault();
+                votingToggle.checked = !newState; // Revert immediately
+                showAuthModal(newState);
+            });
+            
+            // Handle access code input - auto uppercase (works for both text and password types)
+            if (accessCodeInput) {
+                accessCodeInput.addEventListener('input', (e) => {
+                    const originalValue = e.target.value;
+                    const upperValue = originalValue.toUpperCase().replace(/[^A-Z0-9]/g, '');
+                    if (originalValue !== upperValue) {
+                        e.target.value = upperValue;
+                    }
+                    if (toggleError) {
+                        toggleError.style.display = 'none';
+                    }
+                });
+                
+                accessCodeInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        verifyAndToggle();
+                    }
+                });
+            }
+            
+            // Confirm button
+            if (confirmBtn) {
+                confirmBtn.addEventListener('click', verifyAndToggle);
+            }
+            
+            // Cancel button
+            if (cancelBtn) {
+                cancelBtn.addEventListener('click', () => {
+                    hideAuthModal();
+                });
+            }
+            
+            // Close modal on outside click
+            if (authModal) {
+                authModal.addEventListener('click', (e) => {
+                    if (e.target === authModal) {
+                        hideAuthModal();
+                    }
+                });
+            }
+            
+            // Refresh status periodically
+            setInterval(loadVotingStatus, 30000); // Every 30 seconds
+        }
+        
         // Reset all votes
         const resetAllBtn = document.getElementById('resetAllVotesBtn');
         if (resetAllBtn) {
@@ -999,11 +1251,35 @@
                     const headers = getAdminHeaders();
                     headers['Cache-Control'] = 'no-cache';
                     headers['Pragma'] = 'no-cache';
+                    
+                    // Create AbortController for timeout
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+                    
                     const response = await fetch(`${API_BASE}/api/admin/reset-votes`, {
                         method: 'POST',
                         credentials: 'include',
-                        headers: headers
+                        headers: headers,
+                        body: JSON.stringify({}), // Send empty JSON body
+                        signal: controller.signal
                     });
+                    
+                    clearTimeout(timeoutId);
+                    
+                    // Check response status before parsing JSON
+                    if (!response.ok) {
+                        let errorMessage = 'Failed to reset votes';
+                        try {
+                            const errorData = await response.json();
+                            errorMessage = errorData.message || errorMessage;
+                        } catch (_) {
+                            errorMessage = `Server error: ${response.status} ${response.statusText}`;
+                        }
+                        showToast(errorMessage, 'error');
+                        console.error('Reset votes failed:', response.status, errorMessage);
+                        return;
+                    }
+                    
                     const data = await response.json();
                     
                     if (data.success) {
@@ -1029,7 +1305,16 @@
                     }
                 } catch (error) {
                     console.error('Reset votes error:', error);
-                    showToast('Failed to reset votes', 'error');
+                    // Handle different types of errors
+                    if (error.name === 'AbortError') {
+                        showToast('Failed to reset votes: Request timed out. Please try again.', 'error');
+                    } else if (error.name === 'TypeError' && error.message.includes('fetch')) {
+                        showToast('Failed to reset votes: Unable to connect to server. Please check your connection.', 'error');
+                    } else if (error.message) {
+                        showToast('Failed to reset votes: ' + error.message, 'error');
+                    } else {
+                        showToast('Failed to reset votes: Network error', 'error');
+                    }
                 }
             });
         }
@@ -1081,6 +1366,20 @@
                         });
                     }
                     
+                    // Check response status before parsing JSON
+                    if (!response.ok) {
+                        let errorMessage = 'Failed to reset user votes';
+                        try {
+                            const errorData = await response.json();
+                            errorMessage = errorData.message || errorMessage;
+                        } catch (_) {
+                            errorMessage = `Server error: ${response.status} ${response.statusText}`;
+                        }
+                        showToast(errorMessage, 'error');
+                        console.error('Reset user votes failed:', response.status, errorMessage);
+                        return;
+                    }
+                    
                     const data = await response.json();
                     
                     if (data.success) {
@@ -1094,7 +1393,7 @@
                     }
                 } catch (error) {
                     console.error('Reset user votes error:', error);
-                    showToast('Failed to reset user votes', 'error');
+                    showToast('Failed to reset user votes: ' + (error.message || 'Network error'), 'error');
                 }
             });
         }
@@ -1134,6 +1433,20 @@
                         body: JSON.stringify({ category: categoryInput })
                     });
                     
+                    // Check response status before parsing JSON
+                    if (!response.ok) {
+                        let errorMessage = 'Failed to reset category votes';
+                        try {
+                            const errorData = await response.json();
+                            errorMessage = errorData.message || errorMessage;
+                        } catch (_) {
+                            errorMessage = `Server error: ${response.status} ${response.statusText}`;
+                        }
+                        showToast(errorMessage, 'error');
+                        console.error('Reset category votes failed:', response.status, errorMessage);
+                        return;
+                    }
+                    
                     const data = await response.json();
                     
                     if (data.success) {
@@ -1146,43 +1459,278 @@
                     }
                 } catch (error) {
                     console.error('Reset category votes error:', error);
-                    showToast('Failed to reset category votes', 'error');
+                    showToast('Failed to reset category votes: ' + (error.message || 'Network error'), 'error');
                 }
             });
         }
 
-        // Birth date form
-        const addBirthdateForm = document.getElementById('addBirthdateForm');
-        if (addBirthdateForm) {
-            addBirthdateForm.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const day = parseInt(document.getElementById('birthDay').value);
-                const month = parseInt(document.getElementById('birthMonth').value);
-                const year = parseInt(document.getElementById('birthYear').value);
+        // Registration entry form
+        // Phone formatting function (Nigeria +234, 10 digits)
+        function formatPhoneNigeria(digits) {
+            const trimmed = digits.slice(0, 10);
+            if (trimmed.length === 0) return '';
+            if (trimmed.length <= 3) return `(${trimmed}`;
+            if (trimmed.length <= 6) return `(${trimmed.slice(0, 3)}) ${trimmed.slice(3)}`;
+            return `(${trimmed.slice(0, 3)}) ${trimmed.slice(3, 6)}-${trimmed.slice(6)}`;
+        }
 
-                if (!day || !month || !year) {
+        // Attach phone mask for Nigeria (+234, 10 digits)
+        function attachPhoneMaskNigeria(inputId) {
+            const input = document.getElementById(inputId);
+            if (!input) return;
+            
+            const update = () => {
+                const digitsOnly = input.value.replace(/\D/g, '');
+                input.value = formatPhoneNigeria(digitsOnly);
+            };
+            
+            input.addEventListener('input', update);
+            input.addEventListener('keydown', (e) => {
+                const allowedKeys = ['Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'Tab', 'Home', 'End'];
+                if (allowedKeys.includes(e.key) || (e.ctrlKey || e.metaKey)) return;
+                const isDigit = /\d/.test(e.key);
+                if (!isDigit) {
+                e.preventDefault();
+                    return;
+                }
+                const currentDigits = input.value.replace(/\D/g, '');
+                if (currentDigits.length >= 10) {
+                    e.preventDefault();
+                }
+            });
+            update();
+        }
+
+        // Auto-capitalize first letter of name
+        function attachNameCapitalization(inputId) {
+            const input = document.getElementById(inputId);
+            if (!input) return;
+            
+            input.addEventListener('blur', () => {
+                const value = input.value.trim();
+                if (value) {
+                    input.value = value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+                }
+            });
+        }
+
+        // Initialize phone masks and name capitalization
+        attachPhoneMaskNigeria('registrationPhone');
+        attachPhoneMaskNigeria('deleteRegistrationPhone');
+        attachNameCapitalization('registrationFirstName');
+        attachNameCapitalization('registrationLastName');
+        attachNameCapitalization('deleteRegistrationFirstName');
+        attachNameCapitalization('deleteRegistrationLastName');
+
+        // Add Registration Form with Confirmation Modal
+        const addRegistrationForm = document.getElementById('addRegistrationForm');
+        const addRegistrationConfirmModal = document.getElementById('addRegistrationConfirmModal');
+        const addRegistrationConfirmMessage = document.getElementById('addRegistrationConfirmMessage');
+        const confirmAddRegistrationBtn = document.getElementById('confirmAddRegistrationBtn');
+        const cancelAddRegistrationBtn = document.getElementById('cancelAddRegistrationBtn');
+        
+        let pendingAddData = null;
+
+        if (addRegistrationForm) {
+            addRegistrationForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const firstName = document.getElementById('registrationFirstName').value.trim();
+                const lastName = document.getElementById('registrationLastName').value.trim();
+                const phoneInput = document.getElementById('registrationPhone').value.replace(/\D/g, '');
+
+                if (!firstName || !lastName || !phoneInput) {
                     showToast('Please fill all fields', 'error');
                     return;
                 }
 
+                if (phoneInput.length !== 10) {
+                    showToast('Phone number must be 10 digits', 'error');
+                    return;
+                }
+
+                // Store pending data and show confirmation modal
+                pendingAddData = {
+                    first_name: firstName,
+                    last_name: lastName,
+                    phone: `+234${phoneInput}`
+                };
+
+                if (addRegistrationConfirmMessage) {
+                    addRegistrationConfirmMessage.textContent = `Do you want to add ${firstName} ${lastName} to the system?`;
+                }
+                if (addRegistrationConfirmModal) {
+                    addRegistrationConfirmModal.style.display = 'flex';
+                }
+            });
+        }
+
+        // Confirm Add Registration
+        if (confirmAddRegistrationBtn) {
+            confirmAddRegistrationBtn.addEventListener('click', async () => {
+                if (!pendingAddData) return;
+
                 try {
-                    const response = await fetch(`${API_BASE}/api/admin/birthdates`, {
+                    const response = await fetch(`${API_BASE}/api/admin/event-registration-users`, {
                         method: 'POST',
                         headers: getAdminHeaders(),
                         credentials: 'include',
-                        body: JSON.stringify({ day, month, year })
+                        body: JSON.stringify(pendingAddData)
                     });
                     const data = await response.json();
                     
                     if (data.success) {
-                        showToast('Birth date added successfully', 'success');
-                        addBirthdateForm.reset();
+                        showToast(data.message || 'Registration record added successfully', 'success');
+                        if (addRegistrationForm) {
+                            addRegistrationForm.reset();
+                            // Re-initialize phone mask after reset
+                            attachPhoneMaskNigeria('registrationPhone');
+                        }
                     } else {
-                        showToast(data.message || 'Failed to add birth date', 'error');
+                        showToast(data.message || 'Failed to add registration record', 'error');
                     }
                 } catch (error) {
-                    console.error('Add birth date error:', error);
-                    showToast('Failed to add birth date', 'error');
+                    console.error('Add registration error:', error);
+                    showToast('Failed to add registration record', 'error');
+                } finally {
+                    pendingAddData = null;
+                    if (addRegistrationConfirmModal) {
+                        addRegistrationConfirmModal.style.display = 'none';
+                    }
+                }
+            });
+        }
+
+        // Cancel Add Registration
+        if (cancelAddRegistrationBtn) {
+            cancelAddRegistrationBtn.addEventListener('click', () => {
+                pendingAddData = null;
+                if (addRegistrationConfirmModal) {
+                    addRegistrationConfirmModal.style.display = 'none';
+                }
+            });
+        }
+
+        // Close Add Registration Modal on outside click
+        if (addRegistrationConfirmModal) {
+            addRegistrationConfirmModal.addEventListener('click', (e) => {
+                if (e.target === addRegistrationConfirmModal) {
+                    pendingAddData = null;
+                    addRegistrationConfirmModal.style.display = 'none';
+                }
+            });
+        }
+
+        // Delete Registration Form with Confirmation Modal
+        const deleteRegistrationForm = document.getElementById('deleteRegistrationForm');
+        const deleteRegistrationConfirmModal = document.getElementById('deleteRegistrationConfirmModal');
+        const deleteRegistrationConfirmMessage = document.getElementById('deleteRegistrationConfirmMessage');
+        const confirmDeleteRegistrationBtn = document.getElementById('confirmDeleteRegistrationBtn');
+        const cancelDeleteRegistrationBtn = document.getElementById('cancelDeleteRegistrationBtn');
+        
+        let pendingDeleteData = null;
+
+        if (deleteRegistrationForm) {
+            deleteRegistrationForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const firstName = document.getElementById('deleteRegistrationFirstName').value.trim();
+                const lastName = document.getElementById('deleteRegistrationLastName').value.trim();
+                const phoneInput = document.getElementById('deleteRegistrationPhone').value.replace(/\D/g, '');
+
+                if (!firstName || !lastName || !phoneInput) {
+                    showToast('Please fill all fields', 'error');
+                    return;
+                }
+
+                if (phoneInput.length !== 10) {
+                    showToast('Phone number must be 10 digits', 'error');
+                    return;
+                }
+
+                // Store pending data and show confirmation modal
+                pendingDeleteData = {
+                    first_name: firstName,
+                    last_name: lastName,
+                    phone: `+234${phoneInput}`
+                };
+
+                if (deleteRegistrationConfirmMessage) {
+                    deleteRegistrationConfirmMessage.textContent = `Do you want to delete ${firstName} ${lastName} from the system?`;
+                }
+                if (deleteRegistrationConfirmModal) {
+                    deleteRegistrationConfirmModal.style.display = 'flex';
+                }
+            });
+        }
+
+        // Confirm Delete Registration
+        if (confirmDeleteRegistrationBtn) {
+            confirmDeleteRegistrationBtn.addEventListener('click', async () => {
+                if (!pendingDeleteData) return;
+
+                try {
+                    const response = await fetch(`${API_BASE}/api/admin/event-registration-users/delete`, {
+                        method: 'POST',
+                        headers: getAdminHeaders(),
+                        credentials: 'include',
+                        body: JSON.stringify(pendingDeleteData)
+                    });
+                    
+                    if (!response.ok) {
+                        let errorMessage = 'Failed to delete registration record';
+                        try {
+                            const errorData = await response.json();
+                            errorMessage = errorData.message || errorMessage;
+                        } catch (_) {
+                            errorMessage = `Server error: ${response.status} ${response.statusText}`;
+                        }
+                        showToast(errorMessage, 'error');
+                        return;
+                    }
+                    
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        showToast(data.message || 'Registration record deleted successfully', 'success');
+                        if (deleteRegistrationForm) {
+                            deleteRegistrationForm.reset();
+                            // Re-initialize phone mask after reset
+                            attachPhoneMaskNigeria('deleteRegistrationPhone');
+                        }
+                        // Reload users if on users page
+                        if (typeof loadUsers === 'function') {
+                            await loadUsers();
+                        }
+                    } else {
+                        showToast(data.message || 'Failed to delete registration record', 'error');
+                    }
+                } catch (error) {
+                    console.error('Delete registration error:', error);
+                    showToast('Failed to delete registration record', 'error');
+                } finally {
+                    pendingDeleteData = null;
+                    if (deleteRegistrationConfirmModal) {
+                        deleteRegistrationConfirmModal.style.display = 'none';
+                    }
+                }
+            });
+        }
+
+        // Cancel Delete Registration
+        if (cancelDeleteRegistrationBtn) {
+            cancelDeleteRegistrationBtn.addEventListener('click', () => {
+                pendingDeleteData = null;
+                if (deleteRegistrationConfirmModal) {
+                    deleteRegistrationConfirmModal.style.display = 'none';
+                }
+            });
+        }
+
+        // Close Delete Registration Modal on outside click
+        if (deleteRegistrationConfirmModal) {
+            deleteRegistrationConfirmModal.addEventListener('click', (e) => {
+                if (e.target === deleteRegistrationConfirmModal) {
+                    pendingDeleteData = null;
+                    deleteRegistrationConfirmModal.style.display = 'none';
                 }
             });
         }
@@ -1366,20 +1914,19 @@
     
     // Logout function
     async function performLogout() {
-        try {
-            await fetch(`${API_BASE}/api/admin/logout`, {
-                method: 'POST',
+            try {
+                await fetch(`${API_BASE}/api/admin/logout`, {
+                    method: 'POST',
                 credentials: 'include',
-                headers: getAdminHeaders()
-            });
-        } catch (error) {
-            console.error('Logout error:', error);
-        }
+                headers: getAdminHeaders(),
+                cache: 'no-store'
+                });
+            } catch (error) {
+                console.error('Logout error:', error);
+            }
         
-        // Clear admin-related storage
+        // Clear vote cache (but keep theme and other non-auth data)
         try {
-            sessionStorage.removeItem('admin_role');
-            sessionStorage.removeItem('admin_code');
             localStorage.removeItem('vote_cache_timestamp');
             localStorage.removeItem('cached_votes');
             localStorage.removeItem('votes_reset');
@@ -1476,6 +2023,76 @@
         setTimeout(() => {
             toast.classList.remove('show');
         }, 3000);
+    }
+
+    // Inactivity detection and auto-logout
+    function resetInactivityTimer() {
+        if (inactivityTimer) {
+            clearTimeout(inactivityTimer);
+        }
+        inactivityTimer = setTimeout(() => {
+            handleInactivityLogout();
+        }, INACTIVITY_TIMEOUT);
+    }
+
+    async function handleInactivityLogout() {
+        // Save state before logout
+        try {
+            // Save current page state
+            const currentState = {
+                page: window.location.pathname,
+                hash: window.location.hash,
+                timestamp: Date.now()
+            };
+            // Store in sessionStorage temporarily (will be cleared on logout)
+            sessionStorage.setItem('inactivity_logout_state', JSON.stringify(currentState));
+        } catch (e) {
+            console.warn('Could not save state:', e);
+        }
+
+        // Perform logout
+        try {
+            await fetch(`${API_BASE}/api/admin/logout`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: getAdminHeaders(),
+                cache: 'no-store'
+            });
+        } catch (e) {
+            console.warn('Logout request failed:', e);
+        }
+
+        // Clear any cached data
+        try {
+            localStorage.removeItem('vote_cache_timestamp');
+            localStorage.removeItem('cached_votes');
+            localStorage.removeItem('votes_reset');
+        } catch (e) {}
+
+        // Redirect with message
+        const loginUrl = 'login.html?inactivity=1';
+        window.location.replace(loginUrl);
+    }
+
+    // Initialize inactivity detection
+    function initInactivityDetection() {
+        const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
+        events.forEach(event => {
+            document.addEventListener(event, resetInactivityTimer, { passive: true });
+        });
+        
+        // Reset timer on page navigation (back/forward buttons, tab switching)
+        window.addEventListener('pageshow', (e) => {
+            if (e.persisted) {
+                // Page was loaded from cache (back/forward navigation)
+                resetInactivityTimer();
+            }
+        });
+        
+        // Reset timer on focus (when user switches back to tab/window)
+        window.addEventListener('focus', resetInactivityTimer);
+        
+        resetInactivityTimer(); // Start timer
     }
 
     // Initialize on load

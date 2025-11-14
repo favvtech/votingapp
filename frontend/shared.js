@@ -6,44 +6,22 @@
     // Falls back to window.location.origin if not set
     const API_BASE = (typeof window !== 'undefined' && window.API_BASE) || window.location.origin;
 
-    // Check if user is logged in
+    // Check if user is logged in - NO localStorage for auth state
     async function checkAuthStatus() {
         try {
-            const headers = {};
-            // Always send access code if available (works even if cookies are blocked)
-            try {
-                const storedUser = JSON.parse(localStorage.getItem('user') || 'null');
-                if (storedUser && storedUser.access_code) {
-                    headers['X-Access-Code'] = storedUser.access_code;
-                }
-            } catch(_) {}
-            
             const response = await fetch(`${API_BASE}/api/check-session`, {
                 method: 'GET',
                 credentials: 'include',
-                headers
+                cache: 'no-store' // Prevent caching
             });
             const data = await response.json();
             if (data.logged_in && data.user) {
-                // Update localStorage with fresh data from server
-                try {
-                    localStorage.setItem('user', JSON.stringify(data.user));
-                    if (data.user.access_code) {
-                        localStorage.setItem('user_access_code', data.user.access_code);
-                    }
-                } catch(_) {}
                 return data.user;
             }
             return null;
         } catch (error) {
             console.error('Auth check error:', error);
-            // Fallback to localStorage
-            try {
-                const userStr = localStorage.getItem('user');
-                return userStr ? JSON.parse(userStr) : null;
-            } catch(_) {
-                return null;
-            }
+            return null;
         }
     }
 
@@ -94,77 +72,74 @@
         }
     }
 
-    // Show A/C circle on pages (not on login page)
-    function showAccessCodeCircle() {
+    // Show A/C circle on pages (not on login page) - get user from backend
+    async function showAccessCodeCircle() {
         // Don't show on login page
         if (window.location.pathname.includes('login.html')) {
             return;
         }
 
-        const userStr = localStorage.getItem('user');
-        if (!userStr) return;
-
-        try {
-            const user = JSON.parse(userStr);
-            if (!user || !user.access_code) return;
-
-            // Check if A/C circle already exists
-            let acCircle = document.getElementById('accessCodeCircle');
-            if (!acCircle) {
-                // Create A/C circle
-                acCircle = document.createElement('div');
-                acCircle.className = 'access-code-circle';
-                acCircle.id = 'accessCodeCircle';
-                acCircle.innerHTML = `
-                    <button type="button" class="ac-circle-btn" id="acCircleBtn" aria-label="Show access code">
-                        <span class="ac-text">A/C</span>
-                    </button>
-                    <div class="access-code-popup" id="accessCodePopup">
-                        <div class="ac-popup-header">
-                            <h3>Your Access Code</h3>
-                            <button type="button" class="ac-close" id="acClose" aria-label="Close">×</button>
-                        </div>
-                        <div class="ac-popup-content">
-                            <div class="ac-code-display" id="acCodeDisplay">${user.access_code}</div>
-                            <p class="ac-warning">Keep this code safe. You'll need it to log in.</p>
-                        </div>
-                    </div>
-                `;
-                document.body.appendChild(acCircle);
-
-                // Add event listeners
-                const acCircleBtn = document.getElementById('acCircleBtn');
-                const acClose = document.getElementById('acClose');
-                
-                if (acCircleBtn) {
-                    acCircleBtn.addEventListener('click', () => {
-                        acCircle.classList.toggle('show-popup');
-                    });
-                }
-
-                if (acClose) {
-                    acClose.addEventListener('click', () => {
-                        acCircle.classList.remove('show-popup');
-                    });
-                }
-
-                // Close popup when clicking outside
-                document.addEventListener('click', (e) => {
-                    if (acCircle && !acCircle.contains(e.target) && acCircle.classList.contains('show-popup')) {
-                        acCircle.classList.remove('show-popup');
-                    }
-                });
-            } else {
-                // Update existing circle
-                const acCodeDisplay = document.getElementById('acCodeDisplay');
-                if (acCodeDisplay) {
-                    acCodeDisplay.textContent = user.access_code;
-                }
-                acCircle.style.display = 'flex';
+        // Get user from backend, not localStorage
+        const user = await checkAuthStatus();
+        if (!user || !user.access_code) {
+            // Remove circle if user is not logged in or has no access code
+            const existingCircle = document.getElementById('accessCodeCircle');
+            if (existingCircle) {
+                existingCircle.remove();
             }
-        } catch (error) {
-            console.error('Error showing access code circle:', error);
+            return;
         }
+
+        // Check if A/C circle already exists
+        let acCircle = document.getElementById('accessCodeCircle');
+        if (!acCircle) {
+            // Create A/C circle
+            acCircle = document.createElement('div');
+            acCircle.className = 'access-code-circle';
+            acCircle.id = 'accessCodeCircle';
+            document.body.appendChild(acCircle);
+        }
+        
+        // Update or set the innerHTML
+        acCircle.innerHTML = `
+            <button type="button" class="ac-circle-btn" id="acCircleBtn" aria-label="Show access code">
+                <span class="ac-text">A/C</span>
+            </button>
+            <div class="access-code-popup" id="accessCodePopup">
+                <div class="ac-popup-header">
+                    <h3>Your Access Code</h3>
+                    <button type="button" class="ac-close" id="acClose" aria-label="Close">×</button>
+                </div>
+                <div class="ac-popup-content">
+                    <div class="ac-code-display" id="acCodeDisplay">${user.access_code}</div>
+                    <p class="ac-warning">Keep this code safe. You'll need it to log in.</p>
+                </div>
+            </div>
+        `;
+
+        // Add event listeners (after innerHTML update, elements are fresh)
+        const acCircleBtn = document.getElementById('acCircleBtn');
+        const acClose = document.getElementById('acClose');
+        
+        if (acCircleBtn) {
+            acCircleBtn.addEventListener('click', () => {
+                acCircle.classList.toggle('show-popup');
+            });
+        }
+
+        if (acClose) {
+            acClose.addEventListener('click', () => {
+                acCircle.classList.remove('show-popup');
+            });
+        }
+
+        // Close popup when clicking outside
+        const handleClickOutside = (e) => {
+            if (acCircle && !acCircle.contains(e.target) && acCircle.classList.contains('show-popup')) {
+                acCircle.classList.remove('show-popup');
+            }
+        };
+        document.addEventListener('click', handleClickOutside);
     }
 
     // Initialize on page load
@@ -193,50 +168,64 @@
         window.addEventListener('pageshow', async (e) => {
             if (e.persisted) {
                 // Page was loaded from cache (back/forward button)
-                // Force fresh session check and clear stale data
+                // Force fresh session check
                 const user = await checkAuthStatus();
                 if (!user) {
+                    // Clear vote cache but keep it for non-auth purposes
                     try {
-                        localStorage.removeItem('user');
-                        localStorage.removeItem('user_access_code');
                         localStorage.removeItem('vote_cache_timestamp');
                         localStorage.removeItem('cached_votes');
-                        sessionStorage.clear();
+                        localStorage.removeItem('votes_reset');
                     } catch (_) {}
                     updateNavigation(false);
                     const ac = document.getElementById('accessCodeCircle');
                     if (ac) ac.remove();
+                    // Redirect to login if on protected page
+                    const paths = getPaths();
+                    if (paths.isVotePage) {
+                        window.location.replace(paths.loginHref);
+                    }
+                } else {
+                    // User is logged in, update UI
+                    updateNavigation(true);
+                    await showAccessCodeCircle();
                 }
             }
         });
         
-        const user = await checkAuthStatus();
-        // If not logged in, hard-clear any stale local client state and UI
+        // Check auth status - retry up to 3 times if first check fails (for fresh signups)
+        let user = await checkAuthStatus();
+        if (!user) {
+            // Wait a bit and retry (in case session cookie is still being set after redirect)
+            for (let i = 0; i < 3 && !user; i++) {
+                await new Promise(resolve => setTimeout(resolve, 200));
+                user = await checkAuthStatus();
+            }
+        }
+        
+        // If not logged in, clear UI state
         if (!user) {
             try {
-                localStorage.removeItem('user');
-                localStorage.removeItem('user_access_code');
                 localStorage.removeItem('vote_cache_timestamp');
                 localStorage.removeItem('cached_votes');
+                localStorage.removeItem('votes_reset');
             } catch (_) {}
             const ac = document.getElementById('accessCodeCircle');
             if (ac) ac.remove();
+            updateNavigation(false);
         } else {
-            // Persist/refresh user in localStorage so pages can show A/C circle
-            try {
-                localStorage.setItem('user', JSON.stringify(user));
-                if (user.access_code) {
-                    localStorage.setItem('user_access_code', user.access_code);
-                }
-            } catch (_) {}
+            // User is logged in, update UI
+            updateNavigation(true);
+            await showAccessCodeCircle();
         }
+        
         wireProfileMenu();
-        updateNavigation(!!user);
-        showAccessCodeCircle();
         initPasswordToggles();
 
         // Re-evaluate mobile-only elements on resize
-        window.addEventListener('resize', () => updateNavigation(!!user));
+        window.addEventListener('resize', () => {
+            checkAuthStatus().then(u => updateNavigation(!!u));
+        });
     }
 
     // Run on DOM ready
@@ -283,17 +272,18 @@
 
     async function handleLogout() {
         try {
-            await fetch(`${API_BASE}/api/logout`, { method: 'POST', credentials: 'include' });
+            await fetch(`${API_BASE}/api/logout`, { 
+                method: 'POST', 
+                credentials: 'include',
+                cache: 'no-store'
+            });
         } catch (_) {}
         
-        // Clear user-related storage (but preserve theme and other non-user data)
+        // Clear vote cache (but keep theme and other non-auth data)
         try {
-            localStorage.removeItem('user');
-            localStorage.removeItem('user_access_code');
             localStorage.removeItem('vote_cache_timestamp');
             localStorage.removeItem('cached_votes');
             localStorage.removeItem('votes_reset');
-            sessionStorage.clear();
         } catch (_) {}
         
         updateNavigation(false);

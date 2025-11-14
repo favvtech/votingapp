@@ -78,11 +78,8 @@
             const data = await response.json();
 
             if (response.ok && data.success) {
-                // Store role in sessionStorage
-                sessionStorage.setItem('admin_role', selectedRole);
-                try { sessionStorage.setItem('admin_code', code); } catch(_) {}
-                // Redirect to dashboard
-                window.location.href = 'dashboard.html';
+                // Redirect to dashboard - use replace to prevent back button
+                window.location.replace('dashboard.html');
             } else {
                 showError(data.message || 'Invalid access code');
             }
@@ -108,5 +105,36 @@
             submitBtn.innerHTML = '<span>Access Dashboard</span>';
         }
     }
+
+    // Check for inactivity logout message
+    (function() {
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('inactivity') === '1') {
+            const messageDiv = document.createElement('div');
+            messageDiv.style.cssText = `
+                position: fixed;
+                top: 20px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: var(--warning, #ffc107);
+                color: white;
+                padding: 16px 24px;
+                border-radius: 8px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+                z-index: 10000;
+                font-weight: 600;
+                text-align: center;
+                max-width: 90%;
+            `;
+            messageDiv.textContent = 'You were logged out due to inactivity.';
+            document.body.appendChild(messageDiv);
+            
+            setTimeout(() => {
+                messageDiv.remove();
+            }, 5000);
+            
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+    })();
 })();
 

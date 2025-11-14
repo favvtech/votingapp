@@ -2,6 +2,28 @@
     // API_BASE: in production set window.API_BASE in HTML to your backend URL
     const API_BASE = (typeof window !== 'undefined' && window.API_BASE) || window.location.origin;
     let categoriesData = [];
+    
+    // Auth check on page load - redirect if not authenticated
+    async function checkAuthAndRedirect() {
+        try {
+            const response = await fetch(`${API_BASE}/api/check-session`, {
+                method: 'GET',
+                credentials: 'include',
+                cache: 'no-store'
+            });
+            const data = await response.json();
+            if (!data.logged_in || !data.user) {
+                // Not authenticated - redirect to login
+                window.location.replace('../Auth/login.html');
+                return false;
+            }
+            return true;
+        } catch (error) {
+            console.error('Auth check failed:', error);
+            window.location.replace('../Auth/login.html');
+            return false;
+        }
+    }
 
     /**
      * Normalize a name for matching with image filenames
@@ -28,59 +50,98 @@
         // Updated to match all actual image files in frontend/images/category1/
         const availableImages = [
             'abel-ehiaguina',
-            'adenekan-kehinde-adedamola',
+            'adenekan-kehinde',
             'adeniran-hallelujah',
-            'adeosun-o-king',
+            'adeniran-oyinkansola',
+            'adeosun-king',
             'akinwunmi-kehinde',
+            'akinwunmi-taiwo',
             'ayepe-vanessa',
             'balogun-oluwatosin',
             'bamidele-michael',
             'blessing-obaji',
             'bukola-ajisafe',
+            'bunmi-ogundapo',
             'confidence-felix',
-            'dauda-musa-marvelous',
             'duthen-funmilayo',
-            'elisha-okon-maurice',
-            'ememekwe-emmanuel-chidera',
+            'elisha-maurice',
+            'ememekwe-emmanuel',
             'emmanuel-nasir',
             'eniola-ayinde',
+            'eric-agwa',
             'favour-odey',
-            'gamsheya-ezra-lumsunya',
+            'gamsheya-lumsunya',
             'gbadebo-elizabeth',
             'ibrahim-fabolude',
             'ijeoma-nwabueze',
-            'joseph-abiodun-wasiu',
+            'joseph-abiodun',
+            'joy-adaku',
             'joy-essiet',
-            'joy-ford-adaku',
             'justina-samuel',
-            'love-ayinde-feyisola',
+            'love-ayinde',
+            'marvelous-musa',
             'momoh-precious',
-            'ochigbo-precious',
-            'ogbor-edward-nnamdi',
-            'olubisi-olasunkanmi-olamilekan',
+            'monson-odonokwu',
+            'ogbor-nnamdi',
+            'okolie-arinze',
+            'olasunkanmi-olamilekan',
             'oreoluwa-adebiyi',
-            'peter-prosperity-sunday',
+            'peter-prosperity',
+            'precious-ochigbo',
             'richard-gbadamashi',
             'richard-olawepo',
             'ruth-mbonu',
             'samson-obaji',
             'samuel-nasir',
             'suleiman-abraham',
+            'taiwo-yusuf',
             'tajudeen-abiodun',
             'thomas-tunmise',
             'veronica-akinwande',
             'victor-nweze',
+            'victoria-ekpenyong',
             'victory-igein',
-            'zion-ita-udong-abasi'
+            'zion-ita'
         ];
 
         const normalizedName = normalizeNameForMatching(nomineeName);
         let matchedFilename = null;
         
-        // Try exact match first
-        if (availableImages.includes(normalizedName)) {
+        // Special name mappings for variations
+        const specialMappings = {
+            'prosperity-peter': 'peter-prosperity',
+            'peter-prosperity': 'peter-prosperity',
+            'adebowale-micheal': null, // No image available - will use placeholder
+            'olubisi-olamilekan': 'olasunkanmi-olamilekan',
+            'elisha-okon-maurice': 'elisha-maurice',
+            'musa-dauda-marvelous': 'marvelous-musa',
+            'dauda-musa-marvelous': 'marvelous-musa',
+            'marvelous-musa': 'marvelous-musa',
+            'adenekan-kehinde-adedamola': 'adenekan-kehinde',
+            'ochigbo-precious': 'precious-ochigbo',
+            'precious-ochigbo': 'precious-ochigbo',
+            'love-ayinde-feyisola': 'love-ayinde',
+            'gamsheya-ezra-lumsunya': 'gamsheya-lumsunya',
+            'ogbor-edward-nnamdi': 'ogbor-nnamdi',
+            'zion-ita-udong-abasi': 'zion-ita',
+            'joy-ford-adaku': 'joy-adaku',
+            'joseph-abiodun-wasiu': 'joseph-abiodun',
+            'ememekwe-emmanuel-chidera': 'ememekwe-emmanuel',
+            'adeosun-o-king': 'adeosun-king'
+        };
+        
+        // Check special mappings first
+        if (specialMappings.hasOwnProperty(normalizedName)) {
+            const mapped = specialMappings[normalizedName];
+            if (mapped && availableImages.includes(mapped)) {
+                matchedFilename = mapped;
+            }
+        }
+        
+        // Try exact match if no special mapping found
+        if (!matchedFilename && availableImages.includes(normalizedName)) {
             matchedFilename = normalizedName;
-        } else {
+        } else if (!matchedFilename) {
             // Extract name parts for better matching (handles reversed order)
             const nameParts = normalizedName.split('-').filter(p => p.length > 0);
             
@@ -171,7 +232,8 @@
         "BEST DRESSED FEMALE": "dressedfemale.jpeg",
         "YSA PARTICIPATION AWARD": "active.jpeg",
         "MOST CHRISTLIKE AWARD": "christlike.jpeg",
-        "LEADERSHIP APPRECIATION AWARD": "leadership.jpeg"
+        "LEADERSHIP APPRECIATION AWARD": "leadership.jpeg",
+        "YSA GATHERING PLACE PARTICIPATION AWARD": "gathering.jpg"
     };
 
     function getCategoryImage(categoryTitle) {
@@ -258,6 +320,177 @@
     }
 
     let categoriesInitialized = false;
+    let votingActive = true;
+    let inactivityTimer = null;
+    const INACTIVITY_TIMEOUT = 30 * 60 * 1000; // 30 minutes in milliseconds
+
+    // Check voting status
+    async function checkVotingStatus() {
+        try {
+            const response = await fetch(`${API_BASE}/api/voting-status`, {
+                method: 'GET',
+                credentials: 'include',
+                cache: 'no-store'
+            });
+            const data = await response.json();
+            if (data.success !== undefined) {
+                votingActive = data.voting_active;
+                if (!votingActive) {
+                    showVotingClosedMessage();
+                    disableAllVoteButtons();
+                } else {
+                    hideVotingClosedMessage();
+                    enableAllVoteButtons();
+                }
+            }
+        } catch (error) {
+            console.error('Error checking voting status:', error);
+        }
+    }
+
+    // Show voting closed message - highly visible
+    function showVotingClosedMessage() {
+        let messageEl = document.getElementById('votingClosedMessage');
+        if (!messageEl) {
+            messageEl = document.createElement('div');
+            messageEl.id = 'votingClosedMessage';
+            document.body.appendChild(messageEl);
+            
+            // Add pulse animation style
+            const style = document.createElement('style');
+            style.id = 'votingClosedMessageStyle';
+            style.textContent = `
+                @keyframes votingPulse {
+                    0%, 100% { transform: translate(-50%, -50%) scale(1); box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.7); }
+                    50% { transform: translate(-50%, -50%) scale(1.02); box-shadow: 0 0 0 15px rgba(220, 53, 69, 0); }
+                }
+                #votingClosedMessage {
+                    position: fixed;
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    background: #DC3545;
+                    color: #FFFFFF;
+                    padding: 12px 18px;
+                    border-radius: 8px;
+                    box-shadow: 0 4px 16px rgba(220, 53, 69, 0.5), 0 0 0 2px rgba(255, 255, 255, 0.4);
+                    z-index: 99999;
+                    font-weight: 600;
+                    font-size: 13px;
+                    text-align: center;
+                    max-width: 70%;
+                    width: auto;
+                    border: 2px solid #FFFFFF;
+                    animation: votingPulse 2s infinite;
+                    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3);
+                    letter-spacing: 0.2px;
+                    white-space: nowrap;
+                    line-height: 1.4;
+                }
+                @media (max-width: 768px) {
+                    #votingClosedMessage {
+                        padding: 8px 14px;
+                        font-size: 11px;
+                        max-width: 70%;
+                        border-radius: 6px;
+                        border-width: 2px;
+                        font-weight: 600;
+                        letter-spacing: 0.1px;
+                    }
+                }
+            `;
+            if (!document.getElementById('votingClosedMessageStyle')) {
+                document.head.appendChild(style);
+            }
+        }
+        messageEl.textContent = '⚠️ Voting Session Has Ended ⚠️';
+        messageEl.style.display = 'block';
+    }
+
+    // Hide voting closed message
+    function hideVotingClosedMessage() {
+        const messageEl = document.getElementById('votingClosedMessage');
+        if (messageEl) {
+            messageEl.style.display = 'none';
+        }
+    }
+
+    // Disable all vote buttons
+    function disableAllVoteButtons() {
+        document.querySelectorAll('.vote-btn').forEach(btn => {
+            btn.disabled = true;
+            btn.style.opacity = '0.5';
+            btn.style.cursor = 'not-allowed';
+        });
+    }
+
+    // Enable all vote buttons
+    function enableAllVoteButtons() {
+        document.querySelectorAll('.vote-btn').forEach(btn => {
+            if (!btn.classList.contains('voted')) {
+                btn.disabled = false;
+                btn.style.opacity = '1';
+                btn.style.cursor = 'pointer';
+            }
+        });
+    }
+
+    // Inactivity detection and auto-logout
+    function resetInactivityTimer() {
+        if (inactivityTimer) {
+            clearTimeout(inactivityTimer);
+        }
+        inactivityTimer = setTimeout(() => {
+            handleInactivityLogout();
+        }, INACTIVITY_TIMEOUT);
+    }
+
+    async function handleInactivityLogout() {
+        // Save state before logout
+        try {
+            // Save current page state
+            const currentState = {
+                page: window.location.pathname,
+                hash: window.location.hash,
+                timestamp: Date.now()
+            };
+            // Store in sessionStorage temporarily (will be cleared on logout)
+            sessionStorage.setItem('inactivity_logout_state', JSON.stringify(currentState));
+        } catch (e) {
+            console.warn('Could not save state:', e);
+        }
+
+        // Perform logout
+        try {
+            await fetch(`${API_BASE}/api/logout`, {
+                method: 'POST',
+                credentials: 'include',
+                cache: 'no-store'
+            });
+        } catch (e) {
+            console.warn('Logout request failed:', e);
+        }
+
+        // Clear vote cache
+        try {
+            localStorage.removeItem('vote_cache_timestamp');
+            localStorage.removeItem('cached_votes');
+            localStorage.removeItem('votes_reset');
+        } catch (e) {}
+
+        // Redirect with message
+        const loginUrl = '../Auth/login.html?inactivity=1';
+        window.location.replace(loginUrl);
+    }
+
+    // Initialize inactivity detection
+    function initInactivityDetection() {
+        const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
+        events.forEach(event => {
+            document.addEventListener(event, resetInactivityTimer, { passive: true });
+        });
+        resetInactivityTimer(); // Start timer
+    }
 
     function initializeCategories() {
         // Prevent multiple initializations
@@ -346,23 +579,16 @@
                     return;
                 }
 
+                // Check voting status before submitting
+                if (!votingActive) {
+                    showVotingClosedMessage();
+                    alert('Voting session is closed.');
+                    return;
+                }
+
                 try {
-                    // Build headers with access code for cookie-free authentication
+                    // Build headers - no localStorage for auth, rely on session cookies
                     const headers = { 'Content-Type': 'application/json' };
-                    try {
-                        const storedUser = JSON.parse(localStorage.getItem('user') || 'null');
-                        if (storedUser && storedUser.access_code) {
-                            headers['X-Access-Code'] = storedUser.access_code;
-                        } else {
-                            // Try alternative storage location
-                            const altCode = localStorage.getItem('user_access_code');
-                            if (altCode) {
-                                headers['X-Access-Code'] = altCode;
-                            }
-                        }
-                    } catch(e) {
-                        console.warn('Could not read access code from storage:', e);
-                    }
                     
                     const resp = await fetch(`${API_BASE}/api/vote`, {
                         method: 'POST',
@@ -376,13 +602,17 @@
                         })
                     });
                     if (resp.status === 401) {
-                        // Not logged in – show clear feedback and send to login
+                        // Not logged in – redirect to login
                         alert('Please log in to vote. You will be redirected to the login page.');
-                        try {
-                            // Preserve return path to categories after login
-                            sessionStorage.setItem('postLoginRedirect', '../Vote/index.html');
-                        } catch(_) {}
-                        window.location.href = '../Auth/login.html#login';
+                        window.location.replace('../Auth/login.html#login');
+                        return;
+                    }
+                    if (resp.status === 403) {
+                        // Voting session closed
+                        const errorData = await resp.json().catch(() => ({}));
+                        const message = errorData.message || 'Voting session is closed.';
+                        showVotingClosedMessage();
+                        alert(message);
                         return;
                     }
                     if (resp.status === 409) {
@@ -481,16 +711,7 @@
                 } catch(_) {}
             }
             
-            const headers = {};
-            try {
-                const storedUser = JSON.parse(localStorage.getItem('user') || 'null');
-                if (storedUser && storedUser.access_code) {
-                    headers['X-Access-Code'] = storedUser.access_code;
-                } else {
-                    const altCode = localStorage.getItem('user_access_code');
-                    if (altCode) headers['X-Access-Code'] = altCode;
-                }
-            } catch(_) {}
+            const headers = {}; // No localStorage for auth - rely on session cookies
             
             // Add timestamp to prevent caching
             const timestamp = Date.now();
@@ -668,7 +889,21 @@
         });
     }
     
-    function waitForCategories() {
+    async function waitForCategories() {
+        // First check authentication before loading categories
+        const isAuthenticated = await checkAuthAndRedirect();
+        if (!isAuthenticated) {
+            return; // Redirect will happen in checkAuthAndRedirect
+        }
+        
+        // Check voting status
+        await checkVotingStatus();
+        // Check periodically (every 30 seconds)
+        setInterval(checkVotingStatus, 30000);
+        
+        // Initialize inactivity detection
+        initInactivityDetection();
+        
         // Check if categories are available
         if (window.CATEGORIES && Array.isArray(window.CATEGORIES) && window.CATEGORIES.length > 0) {
             // Update categoriesData with the loaded categories
