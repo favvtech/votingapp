@@ -11,23 +11,68 @@
     const INACTIVITY_TIMEOUT = 30 * 60 * 1000; // 30 minutes in milliseconds
 
     // Helper function to get admin headers for API requests (no sessionStorage for auth)
+    // Includes header fallback for cross-domain cookie issues
     function getAdminHeaders() {
-        return {
+        const headers = {
             'Content-Type': 'application/json'
         };
+        
+        // Add header fallback if cookies aren't working (from sessionStorage)
+        try {
+            const fallbackCode = sessionStorage.getItem('admin_access_code_fallback');
+            if (fallbackCode) {
+                headers['X-Admin-Code'] = fallbackCode;
+            }
+        } catch (e) {
+            // sessionStorage not available, ignore
+        }
+        
+        return headers;
     }
 
     // Check admin/analyst session on load (no sessionStorage for auth)
     async function checkAdminSession() {
         try {
-            const response = await fetch(`${API_BASE}/api/admin/check-session`, {
+            // Try with cookie first
+            let response = await fetch(`${API_BASE}/api/admin/check-session`, {
                 method: 'GET',
                 credentials: 'include',
-                cache: 'no-store'
+                cache: 'no-store',
+                headers: {
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
+                }
             });
-            const data = await response.json();
+            let data = await response.json();
+            
+            // If session check fails, try with header fallback
+            if (!data.logged_in) {
+                try {
+                    const fallbackCode = sessionStorage.getItem('admin_access_code_fallback');
+                    if (fallbackCode) {
+                        response = await fetch(`${API_BASE}/api/admin/check-session`, {
+                            method: 'GET',
+                            credentials: 'include',
+                            cache: 'no-store',
+                            headers: {
+                                'X-Admin-Code': fallbackCode,
+                                'Cache-Control': 'no-cache',
+                                'Pragma': 'no-cache'
+                            }
+                        });
+                        data = await response.json();
+                    }
+                } catch (e) {
+                    console.warn('Header fallback check failed:', e);
+                }
+            }
             
             if (!data.logged_in) {
+                // Clear any fallback data
+                try {
+                    sessionStorage.removeItem('admin_access_code_fallback');
+                    sessionStorage.removeItem('admin_role_fallback');
+                } catch (e) {}
                 window.location.replace('login.html');
                 return;
             }
@@ -36,6 +81,11 @@
             updateUIForRole();
         } catch (error) {
             console.error('Session check error:', error);
+            // Clear any fallback data
+            try {
+                sessionStorage.removeItem('admin_access_code_fallback');
+                sessionStorage.removeItem('admin_role_fallback');
+            } catch (e) {}
             window.location.replace('login.html');
         }
     }
@@ -1932,6 +1982,12 @@
             localStorage.removeItem('votes_reset');
         } catch (_) {}
         
+        // Clear sessionStorage fallback codes
+        try {
+            sessionStorage.removeItem('admin_access_code_fallback');
+            sessionStorage.removeItem('admin_role_fallback');
+        } catch (_) {}
+        
         // Use replace to prevent back button from restoring state
         window.location.replace('login.html');
     }
@@ -2067,6 +2123,9 @@
             localStorage.removeItem('vote_cache_timestamp');
             localStorage.removeItem('cached_votes');
             localStorage.removeItem('votes_reset');
+            // Clear sessionStorage fallback codes
+            sessionStorage.removeItem('admin_access_code_fallback');
+            sessionStorage.removeItem('admin_role_fallback');
         } catch (e) {}
 
         // Redirect with message

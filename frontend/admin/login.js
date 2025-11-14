@@ -78,6 +78,9 @@
             const data = await response.json();
 
             if (response.ok && data.success) {
+                // Store access code temporarily for header-based fallback if cookies fail
+                const accessCodeForFallback = code;
+                
                 // Verify session is set before redirecting (important for cross-domain cookies)
                 // Wait for cookie to be set, then verify session with retries
                 let sessionVerified = false;
@@ -89,14 +92,22 @@
                     await new Promise(resolve => setTimeout(resolve, attempts === 0 ? 500 : 300));
                     
                     try {
+                        // Try with cookie first, then with header fallback
+                        const headers = {
+                            'Cache-Control': 'no-cache',
+                            'Pragma': 'no-cache'
+                        };
+                        
+                        // If this is not the first attempt, add header fallback
+                        if (attempts > 0) {
+                            headers['X-Admin-Code'] = accessCodeForFallback;
+                        }
+                        
                         const sessionCheck = await fetch(`${API_BASE}/api/admin/check-session`, {
                             method: 'GET',
                             credentials: 'include',
                             cache: 'no-store',
-                            headers: {
-                                'Cache-Control': 'no-cache',
-                                'Pragma': 'no-cache'
-                            }
+                            headers: headers
                         });
                         
                         if (sessionCheck.ok) {
@@ -117,10 +128,42 @@
                     // Session confirmed - redirect to dashboard
                     window.location.replace('dashboard.html');
                 } else {
-                    // If session still not verified after retries, show error
-                    // This might indicate cookie blocking or CORS issues
-                    showError('Session could not be established. Please check your browser settings and try again.');
-                    console.error('Session verification failed after', maxAttempts, 'attempts');
+                    // Cookies aren't working - use header-based fallback
+                    // Store access code in sessionStorage temporarily for dashboard to use
+                    try {
+                        sessionStorage.setItem('admin_access_code_fallback', accessCodeForFallback);
+                        sessionStorage.setItem('admin_role_fallback', selectedRole);
+                    } catch (e) {
+                        console.warn('Could not store access code in sessionStorage:', e);
+                    }
+                    
+                    // Final attempt: try with header-based auth
+                    try {
+                        const finalCheck = await fetch(`${API_BASE}/api/admin/check-session`, {
+                            method: 'GET',
+                            credentials: 'include',
+                            cache: 'no-store',
+                            headers: {
+                                'X-Admin-Code': accessCodeForFallback,
+                                'Cache-Control': 'no-cache',
+                                'Pragma': 'no-cache'
+                            }
+                        });
+                        
+                        if (finalCheck.ok) {
+                            const finalData = await finalCheck.json();
+                            if (finalData.logged_in) {
+                                // Header-based auth works - redirect
+                                window.location.replace('dashboard.html');
+                                return;
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('Final header-based check failed:', e);
+                    }
+                    
+                    // Redirect - dashboard will use header fallback from sessionStorage
+                    window.location.replace('dashboard.html');
                 }
             } else {
                 showError(data.message || 'Invalid access code');
