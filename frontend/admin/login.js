@@ -78,8 +78,45 @@
             const data = await response.json();
 
             if (response.ok && data.success) {
-                // Redirect to dashboard - use replace to prevent back button
-                window.location.replace('dashboard.html');
+                // Verify session is set before redirecting (important for cross-domain cookies)
+                // Wait a moment for cookie to be set, then verify session
+                await new Promise(resolve => setTimeout(resolve, 300));
+                
+                // Verify session before redirect
+                try {
+                    const sessionCheck = await fetch(`${API_BASE}/api/admin/check-session`, {
+                        method: 'GET',
+                        credentials: 'include',
+                        cache: 'no-store'
+                    });
+                    const sessionData = await sessionCheck.json();
+                    
+                    if (sessionData.logged_in) {
+                        // Session confirmed - redirect to dashboard
+                        window.location.replace('dashboard.html');
+                    } else {
+                        // Session not set yet - retry once more
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                        const retryCheck = await fetch(`${API_BASE}/api/admin/check-session`, {
+                            method: 'GET',
+                            credentials: 'include',
+                            cache: 'no-store'
+                        });
+                        const retryData = await retryCheck.json();
+                        
+                        if (retryData.logged_in) {
+                            window.location.replace('dashboard.html');
+                        } else {
+                            // If still not set, redirect anyway (cookie might be blocked by browser)
+                            // Dashboard will handle the redirect if needed
+                            window.location.replace('dashboard.html');
+                        }
+                    }
+                } catch (sessionError) {
+                    console.warn('Session check failed, redirecting anyway:', sessionError);
+                    // Redirect anyway - dashboard will handle auth check
+                    window.location.replace('dashboard.html');
+                }
             } else {
                 showError(data.message || 'Invalid access code');
             }
