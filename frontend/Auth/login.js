@@ -440,7 +440,7 @@
                 const data = await response.json();
 
                 if (response.ok && data.success) {
-                    showMessage(data.message || 'Login successful! Redirecting...', 'success');
+                    showMessage(data.message || 'Login successful! Verifying session...', 'success');
                     // Clear any stale vote cache on fresh login
                     try {
                         localStorage.removeItem('vote_cache_timestamp');
@@ -450,12 +450,51 @@
                     
                     // Show access code if available (no localStorage storage)
                     if (data.user && data.user.access_code) {
-                            showAccessCode(data.user.access_code);
+                        showAccessCode(data.user.access_code);
+                    }
+                    
+                    // Verify session before redirecting (important for cross-domain cookies)
+                    let sessionVerified = false;
+                    let attempts = 0;
+                    const maxAttempts = 5;
+                    
+                    while (!sessionVerified && attempts < maxAttempts) {
+                        // Wait before checking (longer wait for first attempt)
+                        await new Promise(resolve => setTimeout(resolve, attempts === 0 ? 500 : 300));
+                        
+                        try {
+                            const sessionCheck = await fetch(`${API_BASE}/api/check-session`, {
+                                method: 'GET',
+                                credentials: 'include',
+                                cache: 'no-store',
+                                headers: {
+                                    'Cache-Control': 'no-cache',
+                                    'Pragma': 'no-cache'
+                                }
+                            });
+                            
+                            if (sessionCheck.ok) {
+                                const sessionData = await sessionCheck.json();
+                                if (sessionData.logged_in && sessionData.user) {
+                                    sessionVerified = true;
+                                    break;
+                                }
+                            }
+                        } catch (sessionError) {
+                            console.warn(`Session check attempt ${attempts + 1} failed:`, sessionError);
                         }
-                    // Redirect to Vote page after short delay - use replace to prevent back button issues
-                    setTimeout(() => {
+                        
+                        attempts++;
+                    }
+                    
+                    if (sessionVerified) {
+                        // Session confirmed - redirect to Vote page
                         window.location.replace('../Vote/index.html');
-                    }, 1500);
+                    } else {
+                        // If session still not verified, show error
+                        showMessage('Session could not be established. Please try logging in again.', 'error');
+                        console.error('Session verification failed after', maxAttempts, 'attempts');
+                    }
                 } else {
                     if (data.message && data.message.toLowerCase().includes('access code')) {
                         showError('loginAccessCode', data.message);
@@ -547,7 +586,7 @@
                 const data = await response.json();
 
                 if (response.ok && data.success) {
-                    showMessage(data.message || 'Account created successfully! Redirecting...', 'success');
+                    showMessage(data.message || 'Account created successfully! Verifying session...', 'success');
                     // Clear any stale vote cache on fresh signup
                     try {
                         localStorage.removeItem('vote_cache_timestamp');
@@ -557,13 +596,51 @@
                     
                     // Show access code if available (no localStorage storage for auth)
                     if (data.user && data.user.access_code) {
-                            showAccessCode(data.user.access_code);
+                        showAccessCode(data.user.access_code);
+                    }
+                    
+                    // Verify session before redirecting (important for cross-domain cookies)
+                    let sessionVerified = false;
+                    let attempts = 0;
+                    const maxAttempts = 5;
+                    
+                    while (!sessionVerified && attempts < maxAttempts) {
+                        // Wait before checking (longer wait for first attempt)
+                        await new Promise(resolve => setTimeout(resolve, attempts === 0 ? 500 : 300));
+                        
+                        try {
+                            const sessionCheck = await fetch(`${API_BASE}/api/check-session`, {
+                                method: 'GET',
+                                credentials: 'include',
+                                cache: 'no-store',
+                                headers: {
+                                    'Cache-Control': 'no-cache',
+                                    'Pragma': 'no-cache'
+                                }
+                            });
+                            
+                            if (sessionCheck.ok) {
+                                const sessionData = await sessionCheck.json();
+                                if (sessionData.logged_in && sessionData.user) {
+                                    sessionVerified = true;
+                                    break;
+                                }
+                            }
+                        } catch (sessionError) {
+                            console.warn(`Session check attempt ${attempts + 1} failed:`, sessionError);
                         }
-                    // Redirect to Vote page after short delay - use replace to prevent back button issues
-                    // Give enough time for session cookie to be set
-                    setTimeout(() => {
+                        
+                        attempts++;
+                    }
+                    
+                    if (sessionVerified) {
+                        // Session confirmed - redirect to Vote page
                         window.location.replace('../Vote/index.html');
-                    }, 2000); // Reduced to 2 seconds but still enough for session
+                    } else {
+                        // If session still not verified, show error
+                        showMessage('Session could not be established. Please try signing up again.', 'error');
+                        console.error('Session verification failed after', maxAttempts, 'attempts');
+                    }
                 } else {
                     if (data.message && data.message.toLowerCase().includes('phone')) {
                         showError('signupPhone', data.message);

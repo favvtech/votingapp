@@ -6,7 +6,7 @@ import secrets
 import string
 import logging
 from functools import lru_cache
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Set, Optional
 from flask import Flask, jsonify, request, session
 from flask_cors import CORS
@@ -293,6 +293,12 @@ def create_app() -> Flask:
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax" if not is_production else "None"
     app.config["SESSION_COOKIE_SECURE"] = True if (FORCE_HTTPS == "1" or is_production) else False
     app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.config["SESSION_COOKIE_PATH"] = "/"
+    # Set session lifetime (31 days for permanent sessions)
+    app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=31)
+    # Don't set SESSION_COOKIE_DOMAIN - let Flask use default (None) for cross-domain cookies
+    # When domain is None, cookie is set for the exact domain that sent it (Render domain)
+    # This allows cross-domain cookies to work with SameSite=None and Secure=True
     
     # CORS configuration
     # Accept comma-separated origins in ALLOWED_ORIGIN or use FRONTEND_URL
@@ -531,7 +537,10 @@ def create_app() -> Flask:
             session['birthdate'] = formatted_birthdate
             session['access_code'] = access_code
             
-            return jsonify({
+            # Explicitly save session to ensure cookie is set
+            session.permanent = True
+            
+            response = jsonify({
                 "success": True,
                 "message": "Account created successfully",
                 "user": {
@@ -542,6 +551,10 @@ def create_app() -> Flask:
                     "access_code": access_code
                 }
             })
+            
+            # Ensure session cookie is set in response
+            # Flask should handle this automatically, but we ensure it's explicit
+            return response
         except Exception as e:
             logger.error(f"❌ Error creating account: {e}", exc_info=True)
             if use_postgresql:
@@ -632,7 +645,10 @@ def create_app() -> Flask:
             session['birthdate'] = user_dict.get('birthdate')
             session['access_code'] = user_dict['access_code']
             
-            return jsonify({
+            # Explicitly save session to ensure cookie is set
+            session.permanent = True
+            
+            response = jsonify({
                 "success": True,
                 "message": "Login successful",
                 "user": {
@@ -643,6 +659,9 @@ def create_app() -> Flask:
                     "access_code": user_dict['access_code']
                 }
             })
+            
+            # Ensure session cookie is set in response
+            return response
         except Exception as e:
             logger.error(f"❌ Error during login: {e}", exc_info=True)
             return jsonify({"success": False, "message": f"Login failed: {str(e)}"}), 500
@@ -1117,11 +1136,16 @@ def create_app() -> Flask:
         session['admin_role'] = 'admin'
         session['admin_authenticated'] = True
         
-        return jsonify({
+        # Explicitly save session to ensure cookie is set
+        session.permanent = True
+        
+        response = jsonify({
             "success": True,
             "message": "Admin login successful",
             "role": "admin"
         })
+        
+        return response
 
     @app.post("/api/analyst/login")
     def analyst_login():
@@ -1135,11 +1159,16 @@ def create_app() -> Flask:
         session['admin_role'] = 'analyst'
         session['admin_authenticated'] = True
         
-        return jsonify({
+        # Explicitly save session to ensure cookie is set
+        session.permanent = True
+        
+        response = jsonify({
             "success": True,
             "message": "Analyst login successful",
             "role": "analyst"
         })
+        
+        return response
 
     @app.get("/api/admin/check-session")
     def admin_check_session():

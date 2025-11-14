@@ -79,43 +79,48 @@
 
             if (response.ok && data.success) {
                 // Verify session is set before redirecting (important for cross-domain cookies)
-                // Wait a moment for cookie to be set, then verify session
-                await new Promise(resolve => setTimeout(resolve, 300));
+                // Wait for cookie to be set, then verify session with retries
+                let sessionVerified = false;
+                let attempts = 0;
+                const maxAttempts = 5;
                 
-                // Verify session before redirect
-                try {
-                    const sessionCheck = await fetch(`${API_BASE}/api/admin/check-session`, {
-                        method: 'GET',
-                        credentials: 'include',
-                        cache: 'no-store'
-                    });
-                    const sessionData = await sessionCheck.json();
+                while (!sessionVerified && attempts < maxAttempts) {
+                    // Wait before checking (longer wait for first attempt)
+                    await new Promise(resolve => setTimeout(resolve, attempts === 0 ? 500 : 300));
                     
-                    if (sessionData.logged_in) {
-                        // Session confirmed - redirect to dashboard
-                        window.location.replace('dashboard.html');
-                    } else {
-                        // Session not set yet - retry once more
-                        await new Promise(resolve => setTimeout(resolve, 500));
-                        const retryCheck = await fetch(`${API_BASE}/api/admin/check-session`, {
+                    try {
+                        const sessionCheck = await fetch(`${API_BASE}/api/admin/check-session`, {
                             method: 'GET',
                             credentials: 'include',
-                            cache: 'no-store'
+                            cache: 'no-store',
+                            headers: {
+                                'Cache-Control': 'no-cache',
+                                'Pragma': 'no-cache'
+                            }
                         });
-                        const retryData = await retryCheck.json();
                         
-                        if (retryData.logged_in) {
-                            window.location.replace('dashboard.html');
-                        } else {
-                            // If still not set, redirect anyway (cookie might be blocked by browser)
-                            // Dashboard will handle the redirect if needed
-                            window.location.replace('dashboard.html');
+                        if (sessionCheck.ok) {
+                            const sessionData = await sessionCheck.json();
+                            if (sessionData.logged_in) {
+                                sessionVerified = true;
+                                break;
+                            }
                         }
+                    } catch (sessionError) {
+                        console.warn(`Session check attempt ${attempts + 1} failed:`, sessionError);
                     }
-                } catch (sessionError) {
-                    console.warn('Session check failed, redirecting anyway:', sessionError);
-                    // Redirect anyway - dashboard will handle auth check
+                    
+                    attempts++;
+                }
+                
+                if (sessionVerified) {
+                    // Session confirmed - redirect to dashboard
                     window.location.replace('dashboard.html');
+                } else {
+                    // If session still not verified after retries, show error
+                    // This might indicate cookie blocking or CORS issues
+                    showError('Session could not be established. Please check your browser settings and try again.');
+                    console.error('Session verification failed after', maxAttempts, 'attempts');
                 }
             } else {
                 showError(data.message || 'Invalid access code');
