@@ -1616,22 +1616,10 @@ def create_app() -> Flask:
             session_id = session.get('_id') or session.get('session_id')
             if session_id:
                 # Verify session in DB and update last_active
+                # REMOVED: 30-minute inactivity timeout - sessions persist until they expire naturally
                 db_session = get_session_from_db(use_postgresql, session_id)
                 if db_session:
-                    # Check inactivity timeout (30 minutes)
-                    last_active = db_session.get('last_active')
-                    if last_active:
-                        if isinstance(last_active, str):
-                            last_active = datetime.fromisoformat(last_active.replace('Z', '+00:00'))
-                        elif isinstance(last_active, datetime):
-                            pass
-                        else:
-                            last_active = datetime.utcnow()
-                        if (datetime.utcnow() - last_active.replace(tzinfo=None)).total_seconds() > 1800:  # 30 minutes
-                            # Session expired due to inactivity
-                            delete_session_from_db(use_postgresql, session_id)
-                            session.clear()
-                            return None
+                    # Session is valid - return user_id
                     return int(session['user_id'])
             else:
                 # Legacy session without DB backup - still valid but should be migrated

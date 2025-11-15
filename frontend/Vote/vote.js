@@ -4,10 +4,10 @@
     let categoriesData = [];
     
     // Validate session before allowing access to voting page
-    // PRIORITIZES session cookies (most reliable) over tokens
+    // SIMPLIFIED: Only redirect on clear authentication failure, not on network errors
     async function checkSessionBeforeVoting() {
         try {
-            // ALWAYS try session cookie first (most reliable)
+            // Try session cookie first (most reliable)
             const sessionResponse = await fetch(`${API_BASE}/validate_session`, {
                 method: "GET",
                 credentials: 'include',
@@ -22,66 +22,30 @@
                 if (sessionData.valid) {
                     return true; // Session is valid - allow access
                 }
-            }
-            
-            // If session cookie fails, try with token as fallback
-            const token = localStorage.getItem("token") || sessionStorage.getItem("user_access_code_fallback");
-            if (token) {
-                try {
-                    const tokenResponse = await fetch(`${API_BASE}/validate_session`, {
-                        method: "GET",
-                        credentials: 'include',
-                        headers: {
-                            "Authorization": "Bearer " + token,
-                            'Cache-Control': 'no-cache',
-                            'Pragma': 'no-cache'
-                        }
-                    });
-                    
-                    if (tokenResponse.ok) {
-                        const tokenData = await tokenResponse.json();
-                        if (tokenData.valid) {
-                            return true; // Token validation successful
-                        }
-                    }
-                } catch (tokenError) {
-                    console.warn("Token validation error:", tokenError);
-                    // Continue to check if session cookie works
+                // If response says not valid, redirect
+                if (sessionData.valid === false) {
+                    localStorage.removeItem("token");
+                    sessionStorage.removeItem("user_access_code_fallback");
+                    window.location.href = "../Auth/login.html";
+                    return false;
                 }
-            }
-            
-            // Both session cookie and token failed - check response status
-            // Only redirect if we got a clear "not valid" response (401), not on network errors
-            if (sessionResponse.status === 401) {
-                // Clear invalid tokens
+            } else if (sessionResponse.status === 401) {
+                // Clear 401 means not authenticated - redirect
                 localStorage.removeItem("token");
                 sessionStorage.removeItem("user_access_code_fallback");
                 window.location.href = "../Auth/login.html";
                 return false;
             }
             
-            // If we got a response but it's not valid, also redirect
-            if (sessionResponse.ok) {
-                try {
-                    const responseData = await sessionResponse.json();
-                    if (responseData && responseData.valid === false) {
-                        localStorage.removeItem("token");
-                        sessionStorage.removeItem("user_access_code_fallback");
-                        window.location.href = "../Auth/login.html";
-                        return false;
-                    }
-                } catch (e) {
-                    // Couldn't parse response - might be network error, don't redirect
-                    console.warn("Could not parse session validation response:", e);
-                }
-            }
-            
-            // Network error or other issue - don't redirect, let existing auth check handle it
-            console.warn("Session validation unclear, letting existing auth check handle it");
+            // If we get here, it might be a network error or unclear response
+            // Don't redirect - let the existing checkAuthAndRedirect() handle it
+            // This prevents false logouts on network issues
+            console.log("Session validation unclear, letting existing auth check handle it");
             return null;
         } catch (error) {
             console.error("Session validation error:", error);
-            // On network error, don't redirect - let the existing auth check handle it
+            // On any error, don't redirect - let existing auth check handle it
+            // This prevents false logouts on network issues
             return null;
         }
     }
@@ -502,8 +466,7 @@
 
     let categoriesInitialized = false;
     let votingActive = true;
-    let inactivityTimer = null;
-    const INACTIVITY_TIMEOUT = 30 * 60 * 1000; // 30 minutes in milliseconds
+    // REMOVED: INACTIVITY_TIMEOUT and inactivityTimer - 30-minute auto-logout removed
     let votingStatusCheckInterval = null;
     let lastVoteClickTime = 0;
     const VOTE_CLICK_COOLDOWN = 1000; // 1 second cooldown between vote clicks
@@ -638,62 +601,9 @@
         });
     }
 
-    // Inactivity detection and auto-logout
-    function resetInactivityTimer() {
-        if (inactivityTimer) {
-            clearTimeout(inactivityTimer);
-        }
-        inactivityTimer = setTimeout(() => {
-            handleInactivityLogout();
-        }, INACTIVITY_TIMEOUT);
-    }
-
-    async function handleInactivityLogout() {
-        // Save state before logout
-        try {
-            // Save current page state
-            const currentState = {
-                page: window.location.pathname,
-                hash: window.location.hash,
-                timestamp: Date.now()
-            };
-            // Store in sessionStorage temporarily (will be cleared on logout)
-            sessionStorage.setItem('inactivity_logout_state', JSON.stringify(currentState));
-        } catch (e) {
-            console.warn('Could not save state:', e);
-        }
-
-        // Perform logout
-        try {
-            await fetch(`${API_BASE}/api/logout`, {
-                method: 'POST',
-                credentials: 'include',
-                cache: 'no-store'
-            });
-        } catch (e) {
-            console.warn('Logout request failed:', e);
-        }
-
-        // Clear vote cache
-        try {
-            localStorage.removeItem('vote_cache_timestamp');
-            localStorage.removeItem('cached_votes');
-            localStorage.removeItem('votes_reset');
-        } catch (e) {}
-
-        // Redirect with message
-        const loginUrl = '../Auth/login.html?inactivity=1';
-        window.location.replace(loginUrl);
-    }
-
-    // Initialize inactivity detection
-    function initInactivityDetection() {
-        const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
-        events.forEach(event => {
-            document.addEventListener(event, resetInactivityTimer, { passive: true });
-        });
-        resetInactivityTimer(); // Start timer
-    }
+    // REMOVED: 30-minute inactivity detection and auto-logout
+    // Sessions now persist until they expire naturally (31 days)
+    // This prevents false logouts when users navigate between pages
 
     function initializeCategories() {
         // Prevent multiple initializations
@@ -1156,13 +1066,14 @@
     }
     
     async function waitForCategories() {
-        // Validate session first (at the very top)
+        // Validate session first (at the very top) - but don't block on network errors
         const sessionValid = await checkSessionBeforeVoting();
         if (sessionValid === false) {
-            return; // Already redirected to login
+            return; // Already redirected to login (clear authentication failure)
         }
+        // If sessionValid is null (network error), continue to checkAuthAndRedirect
         
-        // First check authentication before loading categories
+        // Check authentication - this is the main auth check
         const isAuthenticated = await checkAuthAndRedirect();
         if (!isAuthenticated) {
             return; // Redirect will happen in checkAuthAndRedirect
@@ -1175,8 +1086,8 @@
         await checkVotingStatus(true);
         // Note: checkVotingStatus() now manages its own interval with dynamic polling
         
-        // Initialize inactivity detection
-        initInactivityDetection();
+        // REMOVED: 30-minute inactivity detection - sessions persist until they expire naturally
+        // initInactivityDetection();
         
         // Check if categories are available
         if (window.CATEGORIES && Array.isArray(window.CATEGORIES) && window.CATEGORIES.length > 0) {

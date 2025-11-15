@@ -482,13 +482,8 @@
                         }
                     }
                     
-                    // ALWAYS fetch access code from server to ensure it displays
-                    // Wait a bit for session to be fully established
-                    await new Promise(resolve => setTimeout(resolve, 300));
-                    const loaded = await loadAccessCode();
-                    
-                    // If server fetch failed but we have it in response, show it directly
-                    if (!loaded && data.user && data.user.access_code) {
+                    // ALWAYS show access code from response immediately (fastest)
+                    if (data.user && data.user.access_code) {
                         const codeToShow = data.user.access_code;
                         const showCode = () => {
                             const circle = document.getElementById('accessCodeCircle');
@@ -498,15 +493,29 @@
                                 circle.style.display = 'block';
                                 circle.style.visibility = 'visible';
                                 circle.style.opacity = '1';
+                                circle.style.zIndex = '10000';
                                 setTimeout(() => {
                                     circle.classList.add('show-popup');
                                 }, 100);
                                 console.log('Access code displayed from response:', codeToShow);
                             }
                         };
+                        // Show immediately with multiple retries
                         showCode();
+                        setTimeout(showCode, 50);
                         setTimeout(showCode, 200);
                         setTimeout(showCode, 500);
+                    }
+                    
+                    // Also fetch from server with retries to ensure it's always visible
+                    // Wait a bit for session to be fully established
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    const loaded = await loadAccessCode();
+                    
+                    // If server fetch succeeded, it will have updated the display
+                    // If it failed, the response-based display above should still work
+                    if (!loaded && data.user && data.user.access_code) {
+                        console.warn('Server fetch failed, but response-based display should work');
                     }
                     
                     // Clear only stale vote cache (not all localStorage)
@@ -670,13 +679,8 @@
                         }
                     }
                     
-                    // ALWAYS fetch access code from server to ensure it displays
-                    // Wait a bit for session to be fully established
-                    await new Promise(resolve => setTimeout(resolve, 300));
-                    const loaded = await loadAccessCode();
-                    
-                    // If server fetch failed but we have it in response, show it directly
-                    if (!loaded && data.user && data.user.access_code) {
+                    // ALWAYS show access code from response immediately (fastest)
+                    if (data.user && data.user.access_code) {
                         const codeToShow = data.user.access_code;
                         const showCode = () => {
                             const circle = document.getElementById('accessCodeCircle');
@@ -686,15 +690,29 @@
                                 circle.style.display = 'block';
                                 circle.style.visibility = 'visible';
                                 circle.style.opacity = '1';
+                                circle.style.zIndex = '10000';
                                 setTimeout(() => {
                                     circle.classList.add('show-popup');
                                 }, 100);
                                 console.log('Access code displayed from response:', codeToShow);
                             }
                         };
+                        // Show immediately with multiple retries
                         showCode();
+                        setTimeout(showCode, 50);
                         setTimeout(showCode, 200);
                         setTimeout(showCode, 500);
+                    }
+                    
+                    // Also fetch from server with retries to ensure it's always visible
+                    // Wait a bit for session to be fully established
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    const loaded = await loadAccessCode();
+                    
+                    // If server fetch succeeded, it will have updated the display
+                    // If it failed, the response-based display above should still work
+                    if (!loaded && data.user && data.user.access_code) {
+                        console.warn('Server fetch failed, but response-based display should work');
                     }
                     
                     // Clear only stale vote cache (not all localStorage)
@@ -750,8 +768,8 @@
     // Load access code from server - ALWAYS use session cookie (most reliable)
     async function loadAccessCode(retryCount = 0) {
         try {
-            const maxRetries = 3;
-            const retryDelays = [500, 1000, 2000]; // Progressive delays
+            const maxRetries = 5; // Increased retries
+            const retryDelays = [300, 600, 1000, 1500, 2000]; // Progressive delays
             
             // Always try with session cookie first (most reliable)
             const response = await fetch(`${API_BASE}/get_access_code`, {
@@ -766,20 +784,31 @@
             if (response.ok) {
                 const data = await response.json();
                 if (data.access_code) {
-                    const circle = document.getElementById('accessCodeCircle');
-                    const display = document.getElementById('acCodeDisplay');
-                    if (circle && display) {
-                        display.textContent = data.access_code;
-                        circle.style.display = 'block';
-                        circle.style.visibility = 'visible';
-                        circle.style.opacity = '1';
-                        setTimeout(() => {
-                            circle.classList.add('show-popup');
-                        }, 100);
-                        console.log('Access code loaded and displayed:', data.access_code);
+                    // Use multiple attempts to find and update elements
+                    let updated = false;
+                    for (let attempt = 0; attempt < 5; attempt++) {
+                        const circle = document.getElementById('accessCodeCircle');
+                        const display = document.getElementById('acCodeDisplay');
+                        if (circle && display) {
+                            display.textContent = data.access_code;
+                            circle.style.display = 'block';
+                            circle.style.visibility = 'visible';
+                            circle.style.opacity = '1';
+                            circle.style.zIndex = '10000'; // Ensure it's on top
+                            setTimeout(() => {
+                                circle.classList.add('show-popup');
+                            }, 100);
+                            console.log('Access code loaded and displayed:', data.access_code);
+                            updated = true;
+                            break;
+                        }
+                        // Wait a bit and retry finding elements
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                    }
+                    if (updated) {
                         return true; // Success
                     } else {
-                        console.warn('Access code elements not found');
+                        console.warn('Access code elements not found after multiple attempts');
                     }
                 } else {
                     console.log("Access code missing from response:", data);
@@ -795,8 +824,9 @@
         } catch (error) {
             console.error("Error loading access code:", error);
             // Retry on network errors
-            if (retryCount < 2) {
-                await new Promise(resolve => setTimeout(resolve, 1000));
+            if (retryCount < maxRetries - 1) {
+                const retryDelays = [300, 600, 1000, 1500, 2000];
+                await new Promise(resolve => setTimeout(resolve, retryDelays[retryCount] || 1000));
                 return await loadAccessCode(retryCount + 1);
             }
         }
