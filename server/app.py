@@ -820,7 +820,14 @@ def create_app() -> Flask:
     @app.post("/api/signup")
     def signup():
         """Register new user"""
-        data = request.get_json()
+        try:
+            data = request.get_json()
+            if not data:
+                return jsonify({"success": False, "message": "Invalid request data"}), 400
+        except Exception as e:
+            logger.error(f"Error parsing signup request: {e}")
+            return jsonify({"success": False, "message": "Invalid request format"}), 400
+        
         firstname = (data.get('firstname') or '').strip()
         lastname = (data.get('lastname') or '').strip()
         phone_raw = (data.get('phone') or '').strip()
