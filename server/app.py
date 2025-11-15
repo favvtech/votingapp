@@ -615,12 +615,20 @@ def create_app() -> Flask:
     init_db()
     
     # Initialize voting_active from DB (persistent across restarts)
-    use_postgresql = app.config.get('USE_POSTGRESQL', False)
-    app.config['VOTING_ACTIVE'] = get_voting_active_from_db(use_postgresql)
-    logger.info(f"✅ Voting session initialized from DB: {'active' if app.config['VOTING_ACTIVE'] else 'inactive'}")
-    
-    # Clean up expired sessions on startup
-    cleanup_expired_sessions(use_postgresql)
+    # Must be done within app context for database access
+    with app.app_context():
+        use_postgresql = app.config.get('USE_POSTGRESQL', False)
+        app.config['VOTING_ACTIVE'] = get_voting_active_from_db(use_postgresql)
+        logger.info(f"✅ Voting session initialized from DB: {'active' if app.config['VOTING_ACTIVE'] else 'inactive'}")
+        
+        # Clean up expired sessions on startup (within app context)
+        try:
+            cleaned = cleanup_expired_sessions(use_postgresql)
+            if cleaned > 0:
+                logger.info(f"✅ Cleaned up {cleaned} expired sessions on startup")
+        except Exception as e:
+            logger.warning(f"⚠ Could not clean up expired sessions on startup: {e}")
+            # Non-critical error, continue startup
 
     @app.get("/api/hero-images")
     def hero_images():
