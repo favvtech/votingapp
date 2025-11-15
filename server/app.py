@@ -5,9 +5,10 @@ import sqlite3
 import secrets
 import string
 import logging
+import time
 from functools import lru_cache
 from datetime import datetime, timedelta
-from typing import List, Set, Optional
+from typing import List, Set, Optional, Callable, Any
 from flask import Flask, jsonify, request, session
 from flask_cors import CORS
 from dotenv import load_dotenv
@@ -263,6 +264,41 @@ def get_user_by_access_code(code: str) -> Optional[sqlite3.Row]:
     user = cur.fetchone()
     conn.close()
     return user
+
+def retry_db_operation(operation: Callable, max_retries: int = 3, delay: float = 0.5) -> Any:
+    """
+    Retry a database operation with exponential backoff.
+    Handles PostgreSQL SSL connection errors and other transient database errors.
+    """
+    last_exception = None
+    for attempt in range(max_retries):
+        try:
+            return operation()
+        except Exception as e:
+            last_exception = e
+            error_str = str(e).lower()
+            
+            # Check if it's a retryable error (SSL errors, connection errors)
+            is_retryable = (
+                'ssl' in error_str or
+                'connection' in error_str or
+                'eof' in error_str or
+                'operationalerror' in error_str or
+                'timeout' in error_str
+            )
+            
+            if not is_retryable or attempt == max_retries - 1:
+                # Not retryable or last attempt, raise the exception
+                raise
+            
+            # Wait before retrying (exponential backoff)
+            wait_time = delay * (2 ** attempt)
+            logger.warning(f"⚠️ Database operation failed (attempt {attempt + 1}/{max_retries}): {e}. Retrying in {wait_time}s...")
+            time.sleep(wait_time)
+    
+    # Should never reach here, but just in case
+    if last_exception:
+        raise last_exception
 
 # Helper functions for DB-backed sessions and voting config
 def get_voting_active_from_db(use_postgresql: bool) -> bool:
@@ -522,10 +558,31 @@ def create_app() -> Flask:
             from models import db
             # Convert postgres:// to postgresql:// for SQLAlchemy
             db_url = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+            
+            # Add SSL mode and connection pool settings for Render PostgreSQL
+            # This prevents SSL connection drops and handles connection timeouts
+            if 'sslmode' not in db_url.lower():
+                # Add sslmode=require if not already present
+                separator = '&' if '?' in db_url else '?'
+                db_url = f"{db_url}{separator}sslmode=require"
+            
             app.config["SQLALCHEMY_DATABASE_URI"] = db_url
             app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+            
+            # Connection pool settings to handle Render PostgreSQL SSL issues
+            app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+                "pool_pre_ping": True,  # Test connections before using them
+                "pool_recycle": 300,     # Recycle connections after 5 minutes
+                "pool_size": 5,          # Maintain 5 connections in pool
+                "max_overflow": 10,      # Allow up to 10 overflow connections
+                "connect_args": {
+                    "connect_timeout": 10,  # 10 second connection timeout
+                    "sslmode": "require"    # Require SSL
+                }
+            }
+            
             db.init_app(app)
-            logger.info("✅ SQLAlchemy configured with PostgreSQL")
+            logger.info("✅ SQLAlchemy configured with PostgreSQL (with connection pool settings)")
         except Exception as e:
             logger.error(f"❌ Failed to configure SQLAlchemy: {e}")
             logger.warning("⚠ Falling back to SQLite")
@@ -749,12 +806,21 @@ def create_app() -> Flask:
                 from models import db, User
                 from sqlalchemy import func
                 
-                max_suffix_result = db.session.query(func.max(User.birthdate_suffix)).filter(
-                    User.birthdate == formatted_birthdate
-                ).scalar()
+                # Retry database operations with exponential backoff for SSL connection issues
+                def get_max_suffix():
+                    db.session.expire_all()
+                    return db.session.query(func.max(User.birthdate_suffix)).filter(
+                        User.birthdate == formatted_birthdate
+                    ).scalar()
+                
+                max_suffix_result = retry_db_operation(get_max_suffix, max_retries=3, delay=0.5)
                 birthdate_suffix = (max_suffix_result or 0) + 1
                 
-                phone_exists = User.query.filter_by(phone=normalized_phone).first()
+                def check_phone():
+                    db.session.expire_all()
+                    return User.query.filter_by(phone=normalized_phone).first()
+                
+                phone_exists = retry_db_operation(check_phone, max_retries=3, delay=0.5)
                 if phone_exists:
                     return jsonify({"success": False, "message": "This phone number is already registered. Login To Continue."}), 409
                 
@@ -770,8 +836,13 @@ def create_app() -> Flask:
                     access_code=access_code
                 )
                 db.session.add(new_user)
-                db.session.commit()
-                user_id = new_user.id
+                
+                # Retry commit operation
+                def commit_user():
+                    db.session.commit()
+                    return new_user.id
+                
+                user_id = retry_db_operation(commit_user, max_retries=3, delay=0.5)
                 
                 logger.info(f"✅ User created in PostgreSQL: ID={user_id}, Name={fullname}, Code={access_code}")
             else:
@@ -848,7 +919,16 @@ def create_app() -> Flask:
                     db.session.rollback()
                 except:
                     pass
-            return jsonify({"success": False, "message": f"Error creating account: {str(e)}"}), 500
+            
+            # Provide user-friendly error message
+            error_str = str(e).lower()
+            if 'ssl' in error_str or 'connection' in error_str or 'eof' in error_str:
+                return jsonify({
+                    "success": False,
+                    "message": "Database connection error. Your account may have been created. Please try logging in."
+                }), 500
+            else:
+                return jsonify({"success": False, "message": f"Error creating account: {str(e)}"}), 500
 
     @app.post("/api/login")
     def login():
@@ -870,9 +950,15 @@ def create_app() -> Flask:
             if use_postgresql:
                 from models import db, User
                 
-                user = User.query.filter(
-                    db.func.lower(db.func.trim(User.fullname)) == fullname_normalized
-                ).first()
+                # Retry database query with exponential backoff for SSL connection issues
+                def query_user():
+                    # Refresh session to ensure we have a fresh connection
+                    db.session.expire_all()
+                    return User.query.filter(
+                        db.func.lower(db.func.trim(User.fullname)) == fullname_normalized
+                    ).first()
+                
+                user = retry_db_operation(query_user, max_retries=3, delay=0.5)
                 
                 if not user:
                     return jsonify({
@@ -962,7 +1048,23 @@ def create_app() -> Flask:
             return response
         except Exception as e:
             logger.error(f"❌ Error during login: {e}", exc_info=True)
-            return jsonify({"success": False, "message": f"Login failed: {str(e)}"}), 500
+            use_postgresql = app.config.get('USE_POSTGRESQL', False)
+            if use_postgresql:
+                try:
+                    from models import db
+                    db.session.rollback()
+                except:
+                    pass
+            
+            # Provide user-friendly error message
+            error_str = str(e).lower()
+            if 'ssl' in error_str or 'connection' in error_str or 'eof' in error_str:
+                return jsonify({
+                    "success": False,
+                    "message": "Database connection error. Please try again in a moment."
+                }), 500
+            else:
+                return jsonify({"success": False, "message": f"Login failed: {str(e)}"}), 500
 
     @app.get("/api/check-session")
     def check_session():
