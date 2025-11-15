@@ -33,42 +33,76 @@
     // Check admin/analyst session on load (no sessionStorage for auth)
     async function checkAdminSession() {
         try {
-            // Try with cookie first
-            let response = await fetch(`${API_BASE}/api/admin/check-session`, {
-                method: 'GET',
-                credentials: 'include',
-                cache: 'no-store',
-                headers: {
-                    'Cache-Control': 'no-cache',
-                    'Pragma': 'no-cache'
+            // Get fallback code from sessionStorage if available
+            let fallbackCode = null;
+            let fallbackRole = null;
+            try {
+                fallbackCode = sessionStorage.getItem('admin_access_code_fallback');
+                fallbackRole = sessionStorage.getItem('admin_role_fallback');
+                // Ensure code is uppercase and trimmed
+                if (fallbackCode) {
+                    fallbackCode = fallbackCode.toUpperCase().trim();
                 }
-            });
-            let data = await response.json();
+            } catch (e) {
+                console.warn('Could not read sessionStorage:', e);
+            }
             
-            // If session check fails, try with header fallback
-            if (!data.logged_in) {
+            let data = null;
+            let response = null;
+            
+            // Try with cookie first
+            try {
+                response = await fetch(`${API_BASE}/api/admin/check-session`, {
+                    method: 'GET',
+                    credentials: 'include',
+                    cache: 'no-store',
+                    headers: {
+                        'Cache-Control': 'no-cache',
+                        'Pragma': 'no-cache'
+                    }
+                });
+                
+                if (response.ok) {
+                    data = await response.json();
+                } else {
+                    console.warn('Cookie-based session check failed with status:', response.status);
+                }
+            } catch (e) {
+                console.warn('Cookie-based session check error:', e);
+            }
+            
+            // If session check fails or didn't work, try with header fallback
+            if ((!data || !data.logged_in) && fallbackCode) {
                 try {
-                    const fallbackCode = sessionStorage.getItem('admin_access_code_fallback');
-                    if (fallbackCode) {
-                        response = await fetch(`${API_BASE}/api/admin/check-session`, {
-                            method: 'GET',
-                            credentials: 'include',
-                            cache: 'no-store',
-                            headers: {
-                                'X-Admin-Code': fallbackCode,
-                                'Cache-Control': 'no-cache',
-                                'Pragma': 'no-cache'
-                            }
-                        });
+                    response = await fetch(`${API_BASE}/api/admin/check-session`, {
+                        method: 'GET',
+                        credentials: 'include',
+                        cache: 'no-store',
+                        headers: {
+                            'X-Admin-Code': fallbackCode,
+                            'Cache-Control': 'no-cache',
+                            'Pragma': 'no-cache'
+                        }
+                    });
+                    
+                    if (response.ok) {
                         data = await response.json();
+                        
+                        // If header fallback worked, update role if needed
+                        if (data.logged_in && fallbackRole) {
+                            currentRole = fallbackRole;
+                        }
+                    } else {
+                        console.warn('Header fallback check failed with status:', response.status);
                     }
                 } catch (e) {
-                    console.warn('Header fallback check failed:', e);
+                    console.error('Header fallback check error:', e);
                 }
             }
             
-            if (!data.logged_in) {
-                // Clear any fallback data
+            // Final check - if still not logged in, redirect to login
+            if (!data || !data.logged_in) {
+                // Clear any fallback data before redirecting
                 try {
                     sessionStorage.removeItem('admin_access_code_fallback');
                     sessionStorage.removeItem('admin_role_fallback');
@@ -77,11 +111,12 @@
                 return;
             }
 
-            currentRole = data.role || currentRole;
+            // Session is valid - update role and continue
+            currentRole = data.role || currentRole || fallbackRole || 'admin';
             updateUIForRole();
         } catch (error) {
             console.error('Session check error:', error);
-            // Clear any fallback data
+            // Clear any fallback data before redirecting
             try {
                 sessionStorage.removeItem('admin_access_code_fallback');
                 sessionStorage.removeItem('admin_role_fallback');

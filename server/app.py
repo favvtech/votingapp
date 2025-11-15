@@ -1180,15 +1180,24 @@ def create_app() -> Flask:
                 "role": role
             })
         # Header fallback for cross-site cookie issues: X-Admin-Code
-        code = (request.headers.get('X-Admin-Code') or '').strip().upper()
-        if code == ADMIN_CODE:
-            session['admin_role'] = 'admin'
-            session['admin_authenticated'] = True
-            return jsonify({"logged_in": True, "role": 'admin'})
-        if code == ANALYST_CODE:
-            session['admin_role'] = 'analyst'
-            session['admin_authenticated'] = True
-            return jsonify({"logged_in": True, "role": 'analyst'})
+        code_header = request.headers.get('X-Admin-Code', '').strip().upper()
+        if code_header:
+            logger.info(f"Header fallback check: received code '{code_header}'")
+            if code_header == ADMIN_CODE:
+                session['admin_role'] = 'admin'
+                session['admin_authenticated'] = True
+                session.permanent = True  # Ensure session cookie is set
+                logger.info("Header fallback: Admin authenticated")
+                return jsonify({"logged_in": True, "role": 'admin'})
+            if code_header == ANALYST_CODE:
+                session['admin_role'] = 'analyst'
+                session['admin_authenticated'] = True
+                session.permanent = True  # Ensure session cookie is set
+                logger.info("Header fallback: Analyst authenticated")
+                return jsonify({"logged_in": True, "role": 'analyst'})
+            logger.warning(f"Header fallback: Invalid code '{code_header}'")
+        
+        logger.info("Session check: Not logged in")
         return jsonify({"logged_in": False})
 
     @app.post("/api/admin/logout")

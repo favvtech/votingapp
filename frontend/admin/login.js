@@ -78,93 +78,30 @@
             const data = await response.json();
 
             if (response.ok && data.success) {
-                // Store access code temporarily for header-based fallback if cookies fail
-                const accessCodeForFallback = code;
-                
-                // Verify session is set before redirecting (important for cross-domain cookies)
-                // Wait for cookie to be set, then verify session with retries
-                let sessionVerified = false;
-                let attempts = 0;
-                const maxAttempts = 5;
-                
-                while (!sessionVerified && attempts < maxAttempts) {
-                    // Wait before checking (longer wait for first attempt)
-                    await new Promise(resolve => setTimeout(resolve, attempts === 0 ? 500 : 300));
-                    
-                    try {
-                        // Try with cookie first, then with header fallback
-                        const headers = {
-                            'Cache-Control': 'no-cache',
-                            'Pragma': 'no-cache'
-                        };
-                        
-                        // If this is not the first attempt, add header fallback
-                        if (attempts > 0) {
-                            headers['X-Admin-Code'] = accessCodeForFallback;
-                        }
-                        
-                        const sessionCheck = await fetch(`${API_BASE}/api/admin/check-session`, {
-                            method: 'GET',
-                            credentials: 'include',
-                            cache: 'no-store',
-                            headers: headers
-                        });
-                        
-                        if (sessionCheck.ok) {
-                            const sessionData = await sessionCheck.json();
-                            if (sessionData.logged_in) {
-                                sessionVerified = true;
-                                break;
-                            }
-                        }
-                    } catch (sessionError) {
-                        console.warn(`Session check attempt ${attempts + 1} failed:`, sessionError);
+                // Store access code in sessionStorage for header-based fallback
+                // Uppercase to ensure consistency with backend comparison
+                const codeUpper = code.toUpperCase().trim();
+                try {
+                    sessionStorage.setItem('admin_access_code_fallback', codeUpper);
+                    sessionStorage.setItem('admin_role_fallback', selectedRole);
+                    // Verify storage worked
+                    const stored = sessionStorage.getItem('admin_access_code_fallback');
+                    if (!stored || stored !== codeUpper) {
+                        console.error('Failed to store access code in sessionStorage');
+                        showError('Failed to save session. Please try again.');
+                        return;
                     }
-                    
-                    attempts++;
+                } catch (e) {
+                    console.error('Could not store access code in sessionStorage:', e);
+                    showError('Failed to save session. Please check your browser settings.');
+                    return;
                 }
                 
-                if (sessionVerified) {
-                    // Session confirmed - redirect to dashboard
-                    window.location.replace('dashboard.html');
-                } else {
-                    // Cookies aren't working - use header-based fallback
-                    // Store access code in sessionStorage temporarily for dashboard to use
-                    try {
-                        sessionStorage.setItem('admin_access_code_fallback', accessCodeForFallback);
-                        sessionStorage.setItem('admin_role_fallback', selectedRole);
-                    } catch (e) {
-                        console.warn('Could not store access code in sessionStorage:', e);
-                    }
-                    
-                    // Final attempt: try with header-based auth
-                    try {
-                        const finalCheck = await fetch(`${API_BASE}/api/admin/check-session`, {
-                            method: 'GET',
-                            credentials: 'include',
-                            cache: 'no-store',
-                            headers: {
-                                'X-Admin-Code': accessCodeForFallback,
-                                'Cache-Control': 'no-cache',
-                                'Pragma': 'no-cache'
-                            }
-                        });
-                        
-                        if (finalCheck.ok) {
-                            const finalData = await finalCheck.json();
-                            if (finalData.logged_in) {
-                                // Header-based auth works - redirect
-                                window.location.replace('dashboard.html');
-                                return;
-                            }
-                        }
-                    } catch (e) {
-                        console.warn('Final header-based check failed:', e);
-                    }
-                    
-                    // Redirect - dashboard will use header fallback from sessionStorage
-                    window.location.replace('dashboard.html');
-                }
+                // Small delay to ensure sessionStorage is persisted before redirect
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+                // Redirect immediately - dashboard will handle session verification
+                window.location.replace('dashboard.html');
             } else {
                 showError(data.message || 'Invalid access code');
             }
