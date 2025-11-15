@@ -1066,15 +1066,42 @@
     }
     
     async function waitForCategories() {
+        // CRITICAL: Wait a bit after page load to allow session cookie to be established
+        // This is especially important after redirect from login/signup
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
         // Validate session first (at the very top) - but don't block on network errors
-        const sessionValid = await checkSessionBeforeVoting();
-        if (sessionValid === false) {
-            return; // Already redirected to login (clear authentication failure)
+        // Retry session check up to 3 times with delays to handle cookie propagation
+        let sessionValid = null;
+        for (let attempt = 0; attempt < 3; attempt++) {
+            sessionValid = await checkSessionBeforeVoting();
+            if (sessionValid === true) {
+                break; // Session is valid
+            }
+            if (sessionValid === false) {
+                return; // Already redirected to login (clear authentication failure)
+            }
+            // If null (network error or unclear), wait and retry
+            if (attempt < 2) {
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
         }
-        // If sessionValid is null (network error), continue to checkAuthAndRedirect
+        
+        // If sessionValid is still null after retries, continue to checkAuthAndRedirect
         
         // Check authentication - this is the main auth check
-        const isAuthenticated = await checkAuthAndRedirect();
+        // Also retry this check to handle cookie propagation
+        let isAuthenticated = false;
+        for (let attempt = 0; attempt < 3; attempt++) {
+            isAuthenticated = await checkAuthAndRedirect();
+            if (isAuthenticated) {
+                break; // Authentication successful
+            }
+            if (attempt < 2) {
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+        }
+        
         if (!isAuthenticated) {
             return; // Redirect will happen in checkAuthAndRedirect
         }

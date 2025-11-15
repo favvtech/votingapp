@@ -973,8 +973,12 @@ def create_app() -> Flask:
                 }
             })
             
+            # CRITICAL: Explicitly set session cookie headers to ensure it's sent
+            # This is especially important for cross-domain cookies
+            response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+            response.headers['Pragma'] = 'no-cache'
+            
             # Ensure session cookie is set in response
-            # Flask should handle this automatically, but we ensure it's explicit
             return response
         except Exception as e:
             logger.error(f"❌ Error creating account: {e}", exc_info=True)
@@ -1114,6 +1118,11 @@ def create_app() -> Flask:
                     "access_code": user_dict['access_code']
                 }
             })
+            
+            # CRITICAL: Explicitly set session cookie headers to ensure it's sent
+            # This is especially important for cross-domain cookies
+            response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+            response.headers['Pragma'] = 'no-cache'
             
             # Ensure session cookie is set in response
             return response
