@@ -468,8 +468,9 @@
 
             try {
                 // Create timeout controller (fallback for browsers without AbortSignal.timeout)
+                // Increased timeout to 15 seconds to account for retry logic and backend cold starts
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 10000);
+                const timeoutId = setTimeout(() => controller.abort(), 15000);
                 
                 const response = await fetch(`${API_BASE}/api/login`, {
                     method: 'POST',
@@ -672,8 +673,9 @@
 
             try {
                 // Create timeout controller (fallback for browsers without AbortSignal.timeout)
+                // Increased timeout to 15 seconds to account for retry logic and backend cold starts
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 10000);
+                const timeoutId = setTimeout(() => controller.abort(), 15000);
                 
                 const response = await fetch(`${API_BASE}/api/signup`, {
                     method: 'POST',

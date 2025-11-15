@@ -371,22 +371,28 @@ def save_session_to_db(use_postgresql: bool, session_id: str, user_id: int, sess
         data_json = json.dumps(session_data) if session_data else None
         if use_postgresql:
             from models import db, Session
-            db_session = Session.query.filter_by(id=session_id).first()
-            if db_session:
-                db_session.user_id = user_id
-                db_session.data = data_json
-                db_session.last_active = datetime.utcnow()
-                db_session.expires_at = expires_at
-            else:
-                db_session = Session(
-                    id=session_id,
-                    user_id=user_id,
-                    data=data_json,
-                    expires_at=expires_at
-                )
-                db.session.add(db_session)
-            db.session.commit()
-            return True
+            
+            def save_session():
+                db.session.expire_all()
+                db_session = Session.query.filter_by(id=session_id).first()
+                if db_session:
+                    db_session.user_id = user_id
+                    db_session.data = data_json
+                    db_session.last_active = datetime.utcnow()
+                    db_session.expires_at = expires_at
+                else:
+                    db_session = Session(
+                        id=session_id,
+                        user_id=user_id,
+                        data=data_json,
+                        expires_at=expires_at
+                    )
+                    db.session.add(db_session)
+                db.session.commit()
+                return True
+            
+            # Use retry logic for PostgreSQL to handle SSL connection issues
+            return retry_db_operation(save_session, max_retries=2, delay=0.3)
         else:
             conn = get_db()
             cursor = conn.cursor()
@@ -400,6 +406,7 @@ def save_session_to_db(use_postgresql: bool, session_id: str, user_id: int, sess
             return True
     except Exception as e:
         logger.error(f"Error saving session to DB: {e}", exc_info=True)
+        # Don't fail signup/login if session save fails - it's not critical
         return False
 
 def get_session_from_db(use_postgresql: bool, session_id: str) -> Optional[dict]:
@@ -813,14 +820,14 @@ def create_app() -> Flask:
                         User.birthdate == formatted_birthdate
                     ).scalar()
                 
-                max_suffix_result = retry_db_operation(get_max_suffix, max_retries=3, delay=0.5)
+                max_suffix_result = retry_db_operation(get_max_suffix, max_retries=2, delay=0.3)
                 birthdate_suffix = (max_suffix_result or 0) + 1
                 
                 def check_phone():
                     db.session.expire_all()
                     return User.query.filter_by(phone=normalized_phone).first()
                 
-                phone_exists = retry_db_operation(check_phone, max_retries=3, delay=0.5)
+                phone_exists = retry_db_operation(check_phone, max_retries=2, delay=0.3)
                 if phone_exists:
                     return jsonify({"success": False, "message": "This phone number is already registered. Login To Continue."}), 409
                 
@@ -842,7 +849,7 @@ def create_app() -> Flask:
                     db.session.commit()
                     return new_user.id
                 
-                user_id = retry_db_operation(commit_user, max_retries=3, delay=0.5)
+                user_id = retry_db_operation(commit_user, max_retries=2, delay=0.3)
                 
                 logger.info(f"✅ User created in PostgreSQL: ID={user_id}, Name={fullname}, Code={access_code}")
             else:
@@ -958,7 +965,7 @@ def create_app() -> Flask:
                         db.func.lower(db.func.trim(User.fullname)) == fullname_normalized
                     ).first()
                 
-                user = retry_db_operation(query_user, max_retries=3, delay=0.5)
+                user = retry_db_operation(query_user, max_retries=2, delay=0.3)
                 
                 if not user:
                     return jsonify({
