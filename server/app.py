@@ -1515,12 +1515,9 @@ def create_app() -> Flask:
                 from sqlalchemy import select
                 
                 # Use transaction with row-level lock to prevent race conditions
+                # Note: We already checked voting_active before starting the transaction (line 1447)
+                # We don't check again inside the transaction to avoid nested transaction errors
                 with db.session.begin():
-                    # Check voting_active again within transaction (double-check)
-                    voting_active_check = get_voting_active_from_db(use_postgresql)
-                    if not voting_active_check:
-                        return jsonify({"success": False, "message": "Voting session is closed."}), 403
-                    
                     # Check if vote already exists with row lock
                     # with_for_update() is a method on Select objects in SQLAlchemy 2.0+, not an import
                     existing = db.session.execute(
@@ -1542,18 +1539,14 @@ def create_app() -> Flask:
                 return jsonify({"success": True, "message": "Vote recorded"}), 201
             else:
                 # Use SQLite with transaction
+                # Note: We already checked voting_active before starting the transaction (line 1447)
                 conn = get_db()
                 try:
                     # Begin transaction
                     conn.execute("BEGIN IMMEDIATE")
                     cur = conn.cursor()
                     
-                    # Check voting_active again within transaction (double-check)
-                    voting_active_check = get_voting_active_from_db(use_postgresql)
-                    if not voting_active_check:
-                        conn.rollback()
-                        conn.close()
-                        return jsonify({"success": False, "message": "Voting session is closed."}), 403
+                    # No need to check voting_active again - already checked before transaction
                     
                     # Check if vote already exists (SQLite doesn't support SELECT FOR UPDATE, but transaction provides isolation)
                     cur.execute(
