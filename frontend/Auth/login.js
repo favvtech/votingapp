@@ -477,16 +477,24 @@
                         } catch (e) {
                             console.warn('Could not store access code in sessionStorage:', e);
                         }
-                        // Show access code - ensure DOM is ready
-                        if (typeof showAccessCode === 'function') {
-                            showAccessCode(data.user.access_code);
+                        // Show access code - ensure DOM elements exist
+                        const codeToShow = data.user.access_code;
+                        const showCode = () => {
+                            const circle = document.getElementById('accessCodeCircle');
+                            const display = document.getElementById('acCodeDisplay');
+                            if (circle && display) {
+                                display.textContent = codeToShow;
+                                circle.style.display = 'block';
+                                setTimeout(() => {
+                                    circle.classList.add('show-popup');
+                                }, 500);
+                            }
+                        };
+                        // Try immediately, then retry if elements not ready
+                        if (accessCodeCircle && acCodeDisplay) {
+                            showCode();
                         } else {
-                            // If function not available yet, wait for DOM
-                            setTimeout(() => {
-                                if (typeof showAccessCode === 'function') {
-                                    showAccessCode(data.user.access_code);
-                                }
-                            }, 100);
+                            setTimeout(showCode, 100);
                         }
                     }
                     
@@ -646,16 +654,24 @@
                         } catch (e) {
                             console.warn('Could not store access code in sessionStorage:', e);
                         }
-                        // Show access code - ensure DOM is ready
-                        if (typeof showAccessCode === 'function') {
-                            showAccessCode(data.user.access_code);
+                        // Show access code - ensure DOM elements exist
+                        const codeToShow = data.user.access_code;
+                        const showCode = () => {
+                            const circle = document.getElementById('accessCodeCircle');
+                            const display = document.getElementById('acCodeDisplay');
+                            if (circle && display) {
+                                display.textContent = codeToShow;
+                                circle.style.display = 'block';
+                                setTimeout(() => {
+                                    circle.classList.add('show-popup');
+                                }, 500);
+                            }
+                        };
+                        // Try immediately, then retry if elements not ready
+                        if (accessCodeCircle && acCodeDisplay) {
+                            showCode();
                         } else {
-                            // If function not available yet, wait for DOM
-                            setTimeout(() => {
-                                if (typeof showAccessCode === 'function') {
-                                    showAccessCode(data.user.access_code);
-                                }
-                            }, 100);
+                            setTimeout(showCode, 100);
                         }
                     }
                     

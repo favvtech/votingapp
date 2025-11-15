@@ -49,6 +49,10 @@
                     
                     if (response.ok) {
                         data = await response.json();
+                        // If header fallback succeeded, wait a bit for session cookie to be set
+                        if (data && data.logged_in && data.user) {
+                            await new Promise(resolve => setTimeout(resolve, 200));
+                        }
                     }
                 } catch (e) {
                     console.warn('Header fallback check failed:', e);
@@ -769,7 +773,16 @@
                 } catch(_) {}
             }
             
-            const headers = {}; // No localStorage for auth - rely on session cookies
+            // Build headers with header fallback for cross-domain cookie issues
+            const headers = {};
+            try {
+                const fallbackCode = sessionStorage.getItem('user_access_code_fallback');
+                if (fallbackCode) {
+                    headers['X-Access-Code'] = fallbackCode.toUpperCase().trim();
+                }
+            } catch (e) {
+                // sessionStorage not available, ignore
+            }
             
             // Add timestamp to prevent caching
             const timestamp = Date.now();
@@ -953,6 +966,9 @@
         if (!isAuthenticated) {
             return; // Redirect will happen in checkAuthAndRedirect
         }
+        
+        // Load user's existing votes to restore UI state
+        await refreshMyVotes(true); // Force fresh fetch after authentication
         
         // Check voting status
         await checkVotingStatus();
