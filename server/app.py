@@ -630,6 +630,15 @@ def create_app() -> Flask:
             logger.warning(f"⚠ Could not clean up expired sessions on startup: {e}")
             # Non-critical error, continue startup
 
+    @app.get("/api/health")
+    def health_check():
+        """Health check endpoint to verify backend is running"""
+        return jsonify({
+            "status": "ok",
+            "message": "Backend is running",
+            "timestamp": datetime.utcnow().isoformat()
+        }), 200
+
     @app.get("/api/hero-images")
     def hero_images():
         access_key = os.getenv("UNSPLASH_ACCESS_KEY")

@@ -4,6 +4,49 @@
     // API_BASE: in production set window.API_BASE in HTML to your backend URL
     const API_BASE = (typeof window !== 'undefined' && window.API_BASE) || window.location.origin;
 
+    // Check backend connectivity on page load
+    async function checkBackendConnectivity() {
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout for health check
+            
+            const response = await fetch(`${API_BASE}/api/health`, {
+                method: 'GET',
+                credentials: 'include',
+                signal: controller.signal
+            });
+            
+            clearTimeout(timeoutId);
+            
+            if (response.ok) {
+                const data = await response.json();
+                console.log('✅ Backend is reachable:', data);
+                return true;
+            } else {
+                console.warn('⚠️ Backend health check returned non-OK status:', response.status);
+                return false;
+            }
+        } catch (error) {
+            console.warn('⚠️ Backend connectivity check failed:', error.name, error.message);
+            console.warn('Backend URL:', API_BASE);
+            // Don't show error to user yet - they might not be trying to login yet
+            // The error will show when they actually try to login/signup
+            return false;
+        }
+    }
+
+    // Run connectivity check when page loads (non-blocking)
+    if (typeof window !== 'undefined') {
+        // Use setTimeout to avoid blocking page load
+        setTimeout(() => {
+            checkBackendConnectivity().then(isConnected => {
+                if (!isConnected) {
+                    console.warn('Backend may be unreachable. Users will see an error when attempting to login/signup.');
+                }
+            });
+        }, 1000); // Wait 1 second after page load
+    }
+
     // DOM Elements
     const loginTab = document.querySelector('[data-tab="login"]');
     const signupTab = document.querySelector('[data-tab="signup"]');
@@ -550,12 +593,28 @@
                 }
             } catch (error) {
                 console.error('Login error:', error);
+                console.error('API_BASE:', API_BASE);
+                console.error('Error details:', {
+                    name: error.name,
+                    message: error.message,
+                    stack: error.stack
+                });
+                
                 let errorMsg = 'Network error. Please check your connection and ensure the backend is running.';
+                
                 if (error.name === 'AbortError' || error.name === 'TimeoutError') {
-                    errorMsg = 'Request timed out. Please check your connection and try again.';
+                    errorMsg = 'Request timed out. The backend may be starting up. Please wait a moment and try again.';
                 } else if (error.name === 'TypeError' && error.message.includes('fetch')) {
-                    errorMsg = 'Cannot connect to backend server. Please check your connection and ensure the backend is running.';
+                    // Check if it's a CORS error
+                    if (error.message.includes('CORS') || error.message.includes('Failed to fetch')) {
+                        errorMsg = 'Cannot connect to backend server. This may be a CORS or network issue. Please check your connection.';
+                    } else {
+                        errorMsg = `Cannot connect to backend server at ${API_BASE}. Please check your connection and ensure the backend is running.`;
+                    }
+                } else if (error.message && error.message.includes('CORS')) {
+                    errorMsg = 'CORS error: The backend may not be configured to accept requests from this origin.';
                 }
+                
                 showMessage(errorMsg, 'error');
             } finally {
                 setLoading(submitBtn, false);
@@ -751,12 +810,28 @@
                 }
             } catch (error) {
                 console.error('Signup error:', error);
+                console.error('API_BASE:', API_BASE);
+                console.error('Error details:', {
+                    name: error.name,
+                    message: error.message,
+                    stack: error.stack
+                });
+                
                 let errorMsg = 'Network error. Please check your connection and ensure the backend is running.';
+                
                 if (error.name === 'AbortError' || error.name === 'TimeoutError') {
-                    errorMsg = 'Request timed out. Please check your connection and try again.';
+                    errorMsg = 'Request timed out. The backend may be starting up. Please wait a moment and try again.';
                 } else if (error.name === 'TypeError' && error.message.includes('fetch')) {
-                    errorMsg = 'Cannot connect to backend server. Please check your connection and ensure the backend is running.';
+                    // Check if it's a CORS error
+                    if (error.message.includes('CORS') || error.message.includes('Failed to fetch')) {
+                        errorMsg = 'Cannot connect to backend server. This may be a CORS or network issue. Please check your connection.';
+                    } else {
+                        errorMsg = `Cannot connect to backend server at ${API_BASE}. Please check your connection and ensure the backend is running.`;
+                    }
+                } else if (error.message && error.message.includes('CORS')) {
+                    errorMsg = 'CORS error: The backend may not be configured to accept requests from this origin.';
                 }
+                
                 showError('signupFirstname', errorMsg);
                 showMessage(errorMsg, 'error');
             } finally {
