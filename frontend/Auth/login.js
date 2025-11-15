@@ -74,93 +74,6 @@
     const acCircleBtn = document.getElementById('acCircleBtn');
     const acClose = document.getElementById('acClose');
     const acCodeDisplay = document.getElementById('acCodeDisplay');
-    
-    // NEW: Access Code Modal Elements
-    const accessCodeModalOverlay = document.getElementById('accessCodeModalOverlay');
-    const accessCodeModal = document.getElementById('accessCodeModal');
-    const acModalCodeDisplay = document.getElementById('acModalCodeDisplay');
-    const acCopyBtn = document.getElementById('acCopyBtn');
-    const acModalContinueBtn = document.getElementById('acModalContinueBtn');
-    
-    // NEW: Function to show access code in prominent modal (cannot be dismissed until acknowledged)
-    function showAccessCodeModal(accessCode) {
-        return new Promise((resolve) => {
-            if (!accessCodeModalOverlay || !acModalCodeDisplay) {
-                console.error('Access code modal elements not found');
-                resolve();
-                return;
-            }
-            
-            // Set the access code in the modal
-            acModalCodeDisplay.textContent = accessCode.toUpperCase();
-            
-            // Show the modal
-            accessCodeModalOverlay.style.display = 'flex';
-            accessCodeModal.style.display = 'block';
-            
-            // Copy button functionality
-            if (acCopyBtn) {
-                acCopyBtn.onclick = () => {
-                    navigator.clipboard.writeText(accessCode.toUpperCase()).then(() => {
-                        acCopyBtn.textContent = '✓ Copied!';
-                        acCopyBtn.style.background = 'var(--gold-light)';
-                        setTimeout(() => {
-                            acCopyBtn.textContent = '📋 Copy Code';
-                            acCopyBtn.style.background = '';
-                        }, 2000);
-                    }).catch(() => {
-                        // Fallback: select text
-                        const range = document.createRange();
-                        range.selectNodeContents(acModalCodeDisplay);
-                        const selection = window.getSelection();
-                        selection.removeAllRanges();
-                        selection.addRange(range);
-                        acCopyBtn.textContent = '✓ Selected!';
-                        setTimeout(() => {
-                            acCopyBtn.textContent = '📋 Copy Code';
-                        }, 2000);
-                    });
-                };
-            }
-            
-            // Continue button - only way to dismiss modal
-            if (acModalContinueBtn) {
-                acModalContinueBtn.onclick = () => {
-                    accessCodeModalOverlay.style.display = 'none';
-                    resolve(); // Resolve promise to continue with redirect
-                };
-            } else {
-                // Fallback: if button doesn't exist, resolve after 10 seconds
-                setTimeout(() => {
-                    accessCodeModalOverlay.style.display = 'none';
-                    resolve();
-                }, 10000);
-            }
-            
-            // Prevent closing modal by clicking outside
-            accessCodeModalOverlay.onclick = (e) => {
-                if (e.target === accessCodeModalOverlay) {
-                    // Don't close - user must click continue button
-                    // Just shake the modal to indicate it can't be dismissed
-                    accessCodeModal.style.animation = 'shake 0.5s ease';
-                    setTimeout(() => {
-                        accessCodeModal.style.animation = '';
-                    }, 500);
-                }
-            };
-        });
-    }
-    
-    // Add shake animation for modal
-    const style = document.createElement('style');
-    style.textContent = `
-        @keyframes shake {
-            0%, 100% { transform: translateX(0); }
-            25% { transform: translateX(-10px); }
-            75% { transform: translateX(10px); }
-        }
-    `;
-    document.head.appendChild(style);
 
     // Initialize birthdate dropdowns
     function initBirthdateDropdowns() {
@@ -615,7 +528,7 @@
                 const data = await response.json();
 
                 if (data.success) {
-                    showMessage(data.message || 'Login successful!', 'success');
+                    showMessage(data.message || 'Login successful! Redirecting...', 'success');
                     
                     // Store access code in sessionStorage for header-based fallback (if cookies fail)
                     if (data.user && data.user.access_code) {
@@ -630,19 +543,49 @@
                         }
                     }
                     
-                    // NEW: Show access code in prominent modal (cannot be dismissed until acknowledged)
+                    // ALWAYS show access code from response immediately (fastest)
                     if (data.user && data.user.access_code) {
-                        // Wait for modal elements to be ready
-                        await new Promise(resolve => setTimeout(resolve, 100));
-                        // Show modal and wait for user to acknowledge
-                        await showAccessCodeModal(data.user.access_code);
+                        const codeToShow = data.user.access_code;
+                        const showCode = () => {
+                            const circle = document.getElementById('accessCodeCircle');
+                            const display = document.getElementById('acCodeDisplay');
+                            if (circle && display) {
+                                display.textContent = codeToShow;
+                                circle.style.display = 'block';
+                                circle.style.visibility = 'visible';
+                                circle.style.opacity = '1';
+                                circle.style.zIndex = '10000';
+                                setTimeout(() => {
+                                    circle.classList.add('show-popup');
+                                }, 100);
+                                console.log('Access code displayed from response:', codeToShow);
+                            }
+                        };
+                        // Show immediately with multiple retries
+                        showCode();
+                        setTimeout(showCode, 50);
+                        setTimeout(showCode, 200);
+                        setTimeout(showCode, 500);
+                    }
+                    
+                    // Also fetch from server with retries to ensure it's always visible
+                    // Wait a bit for session to be fully established
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    const loaded = await loadAccessCode();
+                    
+                    // If server fetch succeeded, it will have updated the display
+                    // If it failed, the response-based display above should still work
+                    if (!loaded && data.user && data.user.access_code) {
+                        console.warn('Server fetch failed, but response-based display should work');
                     }
                     
                     // Clear only stale vote cache (not all localStorage)
                     try {
+                        // Only clear vote-related cache, keep other data
                         const voteCacheTimestamp = localStorage.getItem('vote_cache_timestamp');
                         if (voteCacheTimestamp) {
                             const cacheAge = Date.now() - parseInt(voteCacheTimestamp, 10);
+                            // Only clear if cache is older than 1 hour
                             if (cacheAge > 3600000) {
                                 localStorage.removeItem('vote_cache_timestamp');
                                 localStorage.removeItem('cached_votes');
@@ -651,24 +594,9 @@
                         localStorage.removeItem('votes_reset');
                     } catch (_) {}
                     
-                    // CRITICAL: Wait for session cookie to be fully established before redirect
-                    // Make a session check request to ensure cookie is set
-                    try {
-                        await fetch(`${API_BASE}/api/check-session`, {
-                            method: 'GET',
-                            credentials: 'include',
-                            headers: {
-                                'Cache-Control': 'no-cache',
-                                'Pragma': 'no-cache'
-                            }
-                        });
-                        // Give additional time for cookie to propagate
-                        await new Promise(resolve => setTimeout(resolve, 1000));
-                    } catch (e) {
-                        console.warn('Session check before redirect failed:', e);
-                        // Still proceed with redirect after delay
-                        await new Promise(resolve => setTimeout(resolve, 2000));
-                    }
+                    // CRITICAL: Give user time to see and copy their access code before redirect
+                    // Access code is vital - users need at least 5 seconds to see and save it
+                    await new Promise(resolve => setTimeout(resolve, 5000));
                     
                     // Redirect to Vote page
                     window.location.replace('../Vote/index.html');
@@ -814,7 +742,7 @@
                 const data = await response.json();
 
                 if (data.success) {
-                    showMessage(data.message || 'Account created successfully!', 'success');
+                    showMessage(data.message || 'Account created successfully! Redirecting...', 'success');
                     
                     // Store access code in sessionStorage for header-based fallback (if cookies fail)
                     if (data.user && data.user.access_code) {
@@ -829,19 +757,49 @@
                         }
                     }
                     
-                    // NEW: Show access code in prominent modal (cannot be dismissed until acknowledged)
+                    // ALWAYS show access code from response immediately (fastest)
                     if (data.user && data.user.access_code) {
-                        // Wait for modal elements to be ready
-                        await new Promise(resolve => setTimeout(resolve, 100));
-                        // Show modal and wait for user to acknowledge
-                        await showAccessCodeModal(data.user.access_code);
+                        const codeToShow = data.user.access_code;
+                        const showCode = () => {
+                            const circle = document.getElementById('accessCodeCircle');
+                            const display = document.getElementById('acCodeDisplay');
+                            if (circle && display) {
+                                display.textContent = codeToShow;
+                                circle.style.display = 'block';
+                                circle.style.visibility = 'visible';
+                                circle.style.opacity = '1';
+                                circle.style.zIndex = '10000';
+                                setTimeout(() => {
+                                    circle.classList.add('show-popup');
+                                }, 100);
+                                console.log('Access code displayed from response:', codeToShow);
+                            }
+                        };
+                        // Show immediately with multiple retries
+                        showCode();
+                        setTimeout(showCode, 50);
+                        setTimeout(showCode, 200);
+                        setTimeout(showCode, 500);
+                    }
+                    
+                    // Also fetch from server with retries to ensure it's always visible
+                    // Wait a bit for session to be fully established
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    const loaded = await loadAccessCode();
+                    
+                    // If server fetch succeeded, it will have updated the display
+                    // If it failed, the response-based display above should still work
+                    if (!loaded && data.user && data.user.access_code) {
+                        console.warn('Server fetch failed, but response-based display should work');
                     }
                     
                     // Clear only stale vote cache (not all localStorage)
                     try {
+                        // Only clear vote-related cache, keep other data
                         const voteCacheTimestamp = localStorage.getItem('vote_cache_timestamp');
                         if (voteCacheTimestamp) {
                             const cacheAge = Date.now() - parseInt(voteCacheTimestamp, 10);
+                            // Only clear if cache is older than 1 hour
                             if (cacheAge > 3600000) {
                                 localStorage.removeItem('vote_cache_timestamp');
                                 localStorage.removeItem('cached_votes');
@@ -850,24 +808,9 @@
                         localStorage.removeItem('votes_reset');
                     } catch (_) {}
                     
-                    // CRITICAL: Wait for session cookie to be fully established before redirect
-                    // Make a session check request to ensure cookie is set
-                    try {
-                        await fetch(`${API_BASE}/api/check-session`, {
-                            method: 'GET',
-                            credentials: 'include',
-                            headers: {
-                                'Cache-Control': 'no-cache',
-                                'Pragma': 'no-cache'
-                            }
-                        });
-                        // Give additional time for cookie to propagate
-                        await new Promise(resolve => setTimeout(resolve, 1000));
-                    } catch (e) {
-                        console.warn('Session check before redirect failed:', e);
-                        // Still proceed with redirect after delay
-                        await new Promise(resolve => setTimeout(resolve, 2000));
-                    }
+                    // CRITICAL: Give user time to see and copy their access code before redirect
+                    // Access code is vital - users need at least 5 seconds to see and save it
+                    await new Promise(resolve => setTimeout(resolve, 5000));
                     
                     // Redirect to Vote page
                     window.location.replace('../Vote/index.html');

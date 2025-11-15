@@ -466,7 +466,9 @@
 
     let categoriesInitialized = false;
     let votingActive = true;
-    // REMOVED: INACTIVITY_TIMEOUT and inactivityTimer - 30-minute auto-logout removed
+    // 30-minute inactivity timeout (in milliseconds)
+    const INACTIVITY_TIMEOUT = 30 * 60 * 1000; // 30 minutes
+    let inactivityTimer = null;
     let votingStatusCheckInterval = null;
     let lastVoteClickTime = 0;
     const VOTE_CLICK_COOLDOWN = 1000; // 1 second cooldown between vote clicks
@@ -1065,6 +1067,70 @@
         });
     }
     
+    // 30-minute inactivity detection and auto-logout
+    function resetInactivityTimer() {
+        if (inactivityTimer) {
+            clearTimeout(inactivityTimer);
+        }
+        inactivityTimer = setTimeout(() => {
+            handleInactivityLogout();
+        }, INACTIVITY_TIMEOUT);
+    }
+
+    async function handleInactivityLogout() {
+        // Save state before logout
+        try {
+            const currentState = {
+                page: window.location.pathname,
+                timestamp: Date.now()
+            };
+            sessionStorage.setItem('inactivity_logout_state', JSON.stringify(currentState));
+        } catch (e) {
+            console.warn('Could not save state:', e);
+        }
+
+        // Perform logout
+        try {
+            await fetch(`${API_BASE}/api/logout`, {
+                method: 'POST',
+                credentials: 'include',
+                cache: 'no-store'
+            });
+        } catch (e) {
+            console.warn('Logout request failed:', e);
+        }
+
+        // Clear cached data
+        try {
+            localStorage.removeItem('vote_cache_timestamp');
+            localStorage.removeItem('cached_votes');
+            localStorage.removeItem('votes_reset');
+            sessionStorage.removeItem('user_access_code_fallback');
+            localStorage.removeItem('token');
+        } catch (e) {}
+
+        // Redirect with message
+        window.location.href = '../Auth/login.html?inactivity=1';
+    }
+
+    function initInactivityDetection() {
+        // Reset timer on any user activity
+        const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
+        events.forEach(event => {
+            document.addEventListener(event, resetInactivityTimer, true);
+        });
+
+        // Also reset on visibility change (when user returns to tab)
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) {
+                resetInactivityTimer();
+            }
+        });
+
+        // Start the timer
+        resetInactivityTimer();
+    }
+    
     async function waitForCategories() {
         // CRITICAL: Wait a bit after page load to allow session cookie to be established
         // This is especially important after redirect from login/signup
@@ -1113,8 +1179,8 @@
         await checkVotingStatus(true);
         // Note: checkVotingStatus() now manages its own interval with dynamic polling
         
-        // REMOVED: 30-minute inactivity detection - sessions persist until they expire naturally
-        // initInactivityDetection();
+        // Initialize 30-minute inactivity detection
+        initInactivityDetection();
         
         // Check if categories are available
         if (window.CATEGORIES && Array.isArray(window.CATEGORIES) && window.CATEGORIES.length > 0) {

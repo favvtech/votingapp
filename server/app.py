@@ -1807,9 +1807,51 @@ def create_app() -> Flask:
             session_id = session.get('_id') or session.get('session_id')
             if session_id:
                 # Verify session in DB and update last_active
-                # REMOVED: 30-minute inactivity timeout - sessions persist until they expire naturally
                 db_session = get_session_from_db(use_postgresql, session_id)
                 if db_session:
+                    # Check 30-minute inactivity timeout
+                    last_active = db_session.get('last_active')
+                    if last_active:
+                        # Handle both datetime objects and strings
+                        if isinstance(last_active, str):
+                            try:
+                                # Try isoformat first
+                                last_active = datetime.fromisoformat(last_active.replace('Z', '+00:00'))
+                            except:
+                                try:
+                                    # Fallback: parse common formats
+                                    last_active = datetime.strptime(last_active, '%Y-%m-%d %H:%M:%S.%f')
+                                except:
+                                    try:
+                                        last_active = datetime.strptime(last_active, '%Y-%m-%d %H:%M:%S')
+                                    except:
+                                        logger.warning(f"Could not parse last_active: {last_active}")
+                                        last_active = None
+                        
+                        if last_active:
+                            # Remove timezone info if present for comparison
+                            if hasattr(last_active, 'tzinfo') and last_active.tzinfo:
+                                last_active_naive = last_active.replace(tzinfo=None)
+                            elif hasattr(last_active, 'replace'):
+                                last_active_naive = last_active
+                            else:
+                                last_active_naive = last_active
+                            
+                            # Calculate time since last activity
+                            try:
+                                time_since_active = (datetime.utcnow() - last_active_naive).total_seconds()
+                                
+                                # If inactive for more than 30 minutes (1800 seconds), delete session
+                                if time_since_active > 1800:
+                                    logger.info(f"Session expired due to 30-minute inactivity: {session_id}")
+                                    delete_session_from_db(use_postgresql, session_id)
+                                    session.clear()
+                                    return None
+                            except Exception as e:
+                                logger.warning(f"Error calculating inactivity time: {e}")
+                                # If we can't calculate, assume session is still valid
+                                pass
+                    
                     # Session is valid - return user_id
                     return int(session['user_id'])
             else:
