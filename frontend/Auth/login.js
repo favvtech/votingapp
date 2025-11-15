@@ -2,7 +2,24 @@
     'use strict';
 
     // API_BASE: in production set window.API_BASE in HTML to your backend URL
-    const API_BASE = (typeof window !== 'undefined' && window.API_BASE) || window.location.origin;
+    // CRITICAL: Never fallback to window.location.origin in production - it will be wrong!
+    let API_BASE;
+    if (typeof window !== 'undefined' && window.API_BASE) {
+        API_BASE = window.API_BASE;
+    } else {
+        // Only use localhost fallback for local development
+        const hostname = window.location.hostname;
+        if (hostname === 'localhost' || hostname === '127.0.0.1') {
+            API_BASE = 'http://127.0.0.1:5000';
+        } else {
+            // Production: Use the known backend URL
+            API_BASE = 'https://votingapp-1-jwdq.onrender.com';
+            console.warn('⚠️ API_BASE not set in HTML, using default backend URL:', API_BASE);
+        }
+    }
+    
+    // Log API_BASE for debugging
+    console.log('🔗 API_BASE configured:', API_BASE);
 
     // Check backend connectivity on page load
     async function checkBackendConnectivity() {
@@ -538,7 +555,7 @@
                                 circle.style.visibility = 'visible';
                                 circle.style.opacity = '1';
                                 circle.style.zIndex = '10000';
-                                setTimeout(() => {
+                    setTimeout(() => {
                                     circle.classList.add('show-popup');
                                 }, 100);
                                 console.log('Access code displayed from response:', codeToShow);
@@ -752,7 +769,7 @@
                                 circle.style.visibility = 'visible';
                                 circle.style.opacity = '1';
                                 circle.style.zIndex = '10000';
-                                setTimeout(() => {
+                    setTimeout(() => {
                                     circle.classList.add('show-popup');
                                 }, 100);
                                 console.log('Access code displayed from response:', codeToShow);

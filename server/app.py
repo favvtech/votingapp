@@ -610,31 +610,24 @@ def create_app() -> Flask:
     # When domain is None, cookie is set for the exact domain that sent it (Render domain)
     # This allows cross-domain cookies to work with SameSite=None and Secure=True
     
-    # CORS configuration
+    # CORS configuration - CRITICAL: Must allow all necessary origins
     # Accept comma-separated origins in ALLOWED_ORIGIN or use FRONTEND_URL
     allowed_origin_env = os.getenv('ALLOWED_ORIGIN', '').strip()
     
+    # Build list of allowed origins
     if FRONTEND_URL:
-        # Production: use FRONTEND_URL
-        CORS(app, supports_credentials=True, resources={
-            r"/api/*": {
-                "origins": [FRONTEND_URL],
-                "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-                "allow_headers": ["Content-Type", "X-Access-Code", "X-Admin-Code", "Authorization", "Cache-Control", "Pragma"]
-            }
-        })
-        logger.info(f"CORS configured for frontend: {FRONTEND_URL}")
+        # Production: use FRONTEND_URL + common GitHub Pages patterns
+        origins = [FRONTEND_URL]
+        # Also allow common GitHub Pages patterns
+        if 'github.io' in FRONTEND_URL:
+            # Extract base GitHub Pages domain
+            base_domain = FRONTEND_URL.split('/')[2] if '/' in FRONTEND_URL else FRONTEND_URL
+            origins.append(f"https://{base_domain}")
+        origins.append("https://favvtech.github.io")
+        origins.append("https://votingapp.ibaraysas.com")
     elif allowed_origin_env:
         # Multiple origins from ALLOWED_ORIGIN
         origins = [o.strip() for o in allowed_origin_env.split(',') if o.strip()]
-        CORS(app, supports_credentials=True, resources={
-            r"/api/*": {
-                "origins": origins,
-                "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-                "allow_headers": ["Content-Type", "X-Access-Code", "X-Admin-Code", "Authorization", "Cache-Control", "Pragma"]
-            }
-        })
-        logger.info(f"CORS configured for origins: {origins}")
     elif flask_env == 'development' or flask_env == '':
         # Local development: allow common localhost origins
         origins = [
@@ -651,28 +644,22 @@ def create_app() -> Flask:
             "http://localhost",
             "http://127.0.0.1",
         ]
-        CORS(app, supports_credentials=True, resources={
-            r"/api/*": {
-                "origins": origins,
-                "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-                "allow_headers": ["Content-Type", "X-Access-Code", "X-Admin-Code", "Authorization", "Cache-Control", "Pragma"]
-            }
-        })
-        logger.info("CORS configured for local development")
     else:
         # Production defaults: GitHub Pages and custom domain
         origins = [
             "https://favvtech.github.io",
             "https://votingapp.ibaraysas.com",
         ]
-        CORS(app, supports_credentials=True, resources={
-            r"/api/*": {
-                "origins": origins,
-                "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-                "allow_headers": ["Content-Type", "X-Access-Code", "X-Admin-Code", "Authorization", "Cache-Control", "Pragma"]
-            }
-        })
-        logger.info(f"CORS configured for production origins: {origins}")
+    
+    # Configure CORS for ALL routes (not just /api/*) to ensure health check works
+    CORS(app, 
+         supports_credentials=True, 
+         origins=origins,
+         methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+         allow_headers=["Content-Type", "X-Access-Code", "X-Admin-Code", "Authorization", "Cache-Control", "Pragma"],
+         expose_headers=["Content-Type"],
+         max_age=3600)
+    logger.info(f"✅ CORS configured for origins: {origins}")
     
     # Load birthdates and initialize database on startup
     load_birthdates()
@@ -694,14 +681,78 @@ def create_app() -> Flask:
             logger.warning(f"⚠ Could not clean up expired sessions on startup: {e}")
             # Non-critical error, continue startup
 
+    # Add request logging middleware
+    @app.before_request
+    def log_request_info():
+        """Log incoming requests for debugging"""
+        logger.info(f"📥 {request.method} {request.path} from {request.origin or request.remote_addr}")
+        if request.method in ['POST', 'PUT']:
+            try:
+                data = request.get_json(silent=True)
+                if data:
+                    # Log request data but mask sensitive fields
+                    safe_data = {k: ('***' if k in ['access_code', 'password', 'phone'] else v) 
+                               for k, v in data.items()}
+                    logger.debug(f"Request data: {safe_data}")
+            except:
+                pass
+
+    # Add global error handlers
+    @app.errorhandler(500)
+    def internal_error(error):
+        """Handle 500 errors"""
+        logger.error(f"❌ Internal server error: {error}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "message": "Internal server error. Please try again later."
+        }), 500
+
+    @app.errorhandler(404)
+    def not_found(error):
+        """Handle 404 errors"""
+        logger.warning(f"⚠ 404 Not Found: {request.path}")
+        return jsonify({
+            "success": False,
+            "message": "Endpoint not found"
+        }), 404
+
+    @app.errorhandler(Exception)
+    def handle_exception(e):
+        """Handle all unhandled exceptions"""
+        logger.error(f"❌ Unhandled exception: {e}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "message": f"An error occurred: {str(e)}"
+        }), 500
+
     @app.get("/api/health")
     def health_check():
         """Health check endpoint to verify backend is running"""
-        return jsonify({
-            "status": "ok",
-            "message": "Backend is running",
-            "timestamp": datetime.utcnow().isoformat()
-        }), 200
+        try:
+            # Quick database connectivity check if PostgreSQL is configured
+            use_postgresql = app.config.get('USE_POSTGRESQL', False)
+            db_status = "unknown"
+            if use_postgresql:
+                try:
+                    from models import db
+                    db.session.execute(db.text("SELECT 1"))
+                    db_status = "connected"
+                except Exception as e:
+                    db_status = f"error: {str(e)[:50]}"
+            
+            return jsonify({
+                "status": "ok",
+                "message": "Backend is running",
+                "database": db_status,
+                "timestamp": datetime.utcnow().isoformat()
+            }), 200
+        except Exception as e:
+            logger.error(f"Health check error: {e}")
+            return jsonify({
+                "status": "error",
+                "message": str(e),
+                "timestamp": datetime.utcnow().isoformat()
+            }), 500
 
     @app.get("/api/hero-images")
     def hero_images():
@@ -940,7 +991,13 @@ def create_app() -> Flask:
     @app.post("/api/login")
     def login():
         """Login existing user"""
-        data = request.get_json()
+        try:
+            data = request.get_json()
+            if not data:
+                return jsonify({"success": False, "message": "Invalid request data"}), 400
+        except Exception as e:
+            logger.error(f"Error parsing login request: {e}")
+            return jsonify({"success": False, "message": "Invalid request format"}), 400
         firstname = (data.get('firstname') or '').strip()
         lastname = (data.get('lastname') or '').strip()
         access_code = (data.get('access_code') or '').strip().upper()
