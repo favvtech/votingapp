@@ -1108,6 +1108,61 @@ def create_app() -> Flask:
             logger.error(f"Error getting access code: {e}", exc_info=True)
             return jsonify({"success": False, "message": "Server error"}), 500
     
+    @app.get("/get_access_code")
+    def get_access_code():
+        """Get access code endpoint - supports Bearer token or session/auth header"""
+        # Support Bearer token from Authorization header
+        auth_header = request.headers.get('Authorization', '')
+        if auth_header and auth_header.startswith('Bearer '):
+            token = auth_header.split(' ', 1)[1].strip()
+            # If token is an access code, use it to authenticate
+            user_id = authenticate_request_helper()
+        else:
+            # Use existing authentication system
+            user_id = authenticate_request_helper()
+        
+        if not user_id:
+            return jsonify({"success": False, "message": "Not authenticated"}), 401
+        
+        use_postgresql = app.config.get('USE_POSTGRESQL', False)
+        try:
+            if use_postgresql:
+                from models import db, User
+                user = User.query.filter_by(id=user_id).first()
+                if not user:
+                    return jsonify({"success": False, "message": "User not found"}), 404
+                return jsonify({"access_code": user.access_code})
+            else:
+                conn = get_db()
+                cursor = conn.cursor()
+                cursor.execute("SELECT access_code FROM users WHERE id = ?", (user_id,))
+                row = cursor.fetchone()
+                conn.close()
+                if not row:
+                    return jsonify({"success": False, "message": "User not found"}), 404
+                return jsonify({"access_code": row[0]})
+        except Exception as e:
+            logger.error(f"Error getting access code: {e}", exc_info=True)
+            return jsonify({"success": False, "message": "Server error"}), 500
+    
+    @app.get("/validate_session")
+    def validate_session():
+        """Validate session endpoint - supports Bearer token or session/auth header"""
+        # Support Bearer token from Authorization header
+        auth_header = request.headers.get('Authorization', '')
+        if auth_header and auth_header.startswith('Bearer '):
+            token = auth_header.split(' ', 1)[1].strip()
+            # If token is an access code, use it to authenticate
+            user_id = authenticate_request_helper()
+        else:
+            # Use existing authentication system
+            user_id = authenticate_request_helper()
+        
+        if user_id:
+            return jsonify({"valid": True})
+        else:
+            return jsonify({"valid": False}), 401
+    
     @app.post("/api/save-client-state")
     def save_client_state():
         """Save client-side state for optional restore after re-login"""

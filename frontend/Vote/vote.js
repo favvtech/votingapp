@@ -3,6 +3,84 @@
     const API_BASE = (typeof window !== 'undefined' && window.API_BASE) || window.location.origin;
     let categoriesData = [];
     
+    // Validate session before allowing access to voting page
+    async function checkSessionBeforeVoting() {
+        try {
+            // Try to get token from localStorage (stored access code)
+            const token = localStorage.getItem("token") || sessionStorage.getItem("user_access_code_fallback");
+            
+            if (!token) {
+                // Try with session cookie first
+                const sessionResponse = await fetch(`${API_BASE}/validate_session`, {
+                    method: "GET",
+                    credentials: 'include',
+                    headers: {
+                        'Cache-Control': 'no-cache',
+                        'Pragma': 'no-cache'
+                    }
+                });
+                
+                if (sessionResponse.ok) {
+                    const sessionData = await sessionResponse.json();
+                    if (sessionData.valid) {
+                        return true; // Session is valid
+                    }
+                }
+                
+                // No token and no valid session - redirect to login
+                window.location.href = "../Auth/login.html";
+                return false;
+            }
+
+            const response = await fetch(`${API_BASE}/validate_session`, {
+                method: "GET",
+                credentials: 'include',
+                headers: {
+                    "Authorization": "Bearer " + token,
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
+                }
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                if (!data.valid) {
+                    localStorage.removeItem("token");
+                    sessionStorage.removeItem("user_access_code_fallback");
+                    window.location.href = "../Auth/login.html";
+                    return false;
+                }
+                return true; // Session is valid
+            } else {
+                // If validation fails, try with session cookie as fallback
+                const sessionResponse = await fetch(`${API_BASE}/validate_session`, {
+                    method: "GET",
+                    credentials: 'include',
+                    headers: {
+                        'Cache-Control': 'no-cache',
+                        'Pragma': 'no-cache'
+                    }
+                });
+                
+                if (sessionResponse.ok) {
+                    const sessionData = await sessionResponse.json();
+                    if (sessionData.valid) {
+                        return true; // Session is valid
+                    }
+                }
+                
+                localStorage.removeItem("token");
+                sessionStorage.removeItem("user_access_code_fallback");
+                window.location.href = "../Auth/login.html";
+                return false;
+            }
+        } catch (error) {
+            console.error("Session validation error:", error);
+            // On network error, don't redirect - let the existing auth check handle it
+            return null;
+        }
+    }
+    
     // Auth check on page load - redirect if not authenticated
     async function checkAuthAndRedirect() {
         try {
@@ -1073,6 +1151,12 @@
     }
     
     async function waitForCategories() {
+        // Validate session first (at the very top)
+        const sessionValid = await checkSessionBeforeVoting();
+        if (sessionValid === false) {
+            return; // Already redirected to login
+        }
+        
         // First check authentication before loading categories
         const isAuthenticated = await checkAuthAndRedirect();
         if (!isAuthenticated) {

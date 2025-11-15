@@ -474,6 +474,8 @@
                         try {
                             const codeUpper = data.user.access_code.toUpperCase().trim();
                             sessionStorage.setItem('user_access_code_fallback', codeUpper);
+                            // Also store as token in localStorage for compatibility
+                            localStorage.setItem('token', codeUpper);
                             console.log('Access code stored in sessionStorage:', codeUpper);
                         } catch (e) {
                             console.warn('Could not store access code in sessionStorage:', e);
@@ -504,6 +506,9 @@
                         setTimeout(showCode, 50);
                         setTimeout(showCode, 200);
                         setTimeout(showCode, 500);
+                    } else {
+                        // Fallback: fetch access code from server
+                        loadAccessCode();
                     }
                     
                     // Clear only stale vote cache (not all localStorage)
@@ -659,6 +664,8 @@
                         try {
                             const codeUpper = data.user.access_code.toUpperCase().trim();
                             sessionStorage.setItem('user_access_code_fallback', codeUpper);
+                            // Also store as token in localStorage for compatibility
+                            localStorage.setItem('token', codeUpper);
                             console.log('Access code stored in sessionStorage:', codeUpper);
                         } catch (e) {
                             console.warn('Could not store access code in sessionStorage:', e);
@@ -689,6 +696,9 @@
                         setTimeout(showCode, 50);
                         setTimeout(showCode, 200);
                         setTimeout(showCode, 500);
+                    } else {
+                        // Fallback: fetch access code from server
+                        loadAccessCode();
                     }
                     
                     // Clear only stale vote cache (not all localStorage)
@@ -739,6 +749,75 @@
                 setLoading(submitBtn, false);
             }
         });
+    }
+
+    // Load access code from server
+    async function loadAccessCode() {
+        try {
+            // Try to get token from localStorage (stored access code)
+            const token = localStorage.getItem("token") || sessionStorage.getItem("user_access_code_fallback");
+            
+            if (!token) {
+                // Try with session cookie
+                const response = await fetch(`${API_BASE}/get_access_code`, {
+                    method: "GET",
+                    credentials: 'include',
+                    headers: {
+                        'Cache-Control': 'no-cache',
+                        'Pragma': 'no-cache'
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.access_code) {
+                        const circle = document.getElementById('accessCodeCircle');
+                        const display = document.getElementById('acCodeDisplay');
+                        if (circle && display) {
+                            display.textContent = data.access_code;
+                            circle.style.display = 'block';
+                            circle.style.visibility = 'visible';
+                            circle.style.opacity = '1';
+                            setTimeout(() => {
+                                circle.classList.add('show-popup');
+                            }, 100);
+                        }
+                    }
+                }
+                return;
+            }
+
+            const response = await fetch(`${API_BASE}/get_access_code`, {
+                method: "GET",
+                credentials: 'include',
+                headers: {
+                    "Authorization": "Bearer " + token,
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
+                }
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                if (data.access_code) {
+                    const circle = document.getElementById('accessCodeCircle');
+                    const display = document.getElementById('acCodeDisplay');
+                    if (circle && display) {
+                        display.textContent = data.access_code;
+                        circle.style.display = 'block';
+                        circle.style.visibility = 'visible';
+                        circle.style.opacity = '1';
+                        setTimeout(() => {
+                            circle.classList.add('show-popup');
+                        }, 100);
+                    }
+                } else {
+                    console.log("Access code missing:", data);
+                }
+            }
+        } catch (error) {
+            console.error("Error loading access code:", error);
+        }
     }
 
     // Check if user is already logged in
