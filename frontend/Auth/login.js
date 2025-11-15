@@ -477,7 +477,17 @@
                         } catch (e) {
                             console.warn('Could not store access code in sessionStorage:', e);
                         }
-                        showAccessCode(data.user.access_code);
+                        // Show access code - ensure DOM is ready
+                        if (typeof showAccessCode === 'function') {
+                            showAccessCode(data.user.access_code);
+                        } else {
+                            // If function not available yet, wait for DOM
+                            setTimeout(() => {
+                                if (typeof showAccessCode === 'function') {
+                                    showAccessCode(data.user.access_code);
+                                }
+                            }, 100);
+                        }
                     }
                     
                     // Clear only stale vote cache (not all localStorage)
@@ -636,7 +646,17 @@
                         } catch (e) {
                             console.warn('Could not store access code in sessionStorage:', e);
                         }
-                        showAccessCode(data.user.access_code);
+                        // Show access code - ensure DOM is ready
+                        if (typeof showAccessCode === 'function') {
+                            showAccessCode(data.user.access_code);
+                        } else {
+                            // If function not available yet, wait for DOM
+                            setTimeout(() => {
+                                if (typeof showAccessCode === 'function') {
+                                    showAccessCode(data.user.access_code);
+                                }
+                            }, 100);
+                        }
                     }
                     
                     // Clear only stale vote cache (not all localStorage)

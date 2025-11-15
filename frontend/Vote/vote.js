@@ -155,6 +155,7 @@
             'prosperity-peter': 'peter-prosperity',
             'peter-prosperity': 'peter-prosperity',
             'adebowale-micheal': null, // No image available - will use placeholder
+            'abraham-ikpe': null, // No image available - will use placeholder
             'olubisi-olamilekan': 'olasunkanmi-olamilekan',
             'elisha-okon-maurice': 'elisha-maurice',
             'musa-dauda-marvelous': 'marvelous-musa',
@@ -176,6 +177,10 @@
         // Check special mappings first
         if (specialMappings.hasOwnProperty(normalizedName)) {
             const mapped = specialMappings[normalizedName];
+            if (mapped === null) {
+                // Explicitly no image available - return null to use placeholder
+                return null;
+            }
             if (mapped && availableImages.includes(mapped)) {
                 matchedFilename = mapped;
             }
@@ -630,8 +635,18 @@
                 }
 
                 try {
-                    // Build headers - no localStorage for auth, rely on session cookies
+                    // Build headers - include header fallback for cross-domain cookie issues
                     const headers = { 'Content-Type': 'application/json' };
+                    
+                    // Add access code header fallback if available
+                    try {
+                        const fallbackCode = sessionStorage.getItem('user_access_code_fallback');
+                        if (fallbackCode) {
+                            headers['X-Access-Code'] = fallbackCode.toUpperCase().trim();
+                        }
+                    } catch (e) {
+                        // sessionStorage not available, ignore
+                    }
                     
                     const resp = await fetch(`${API_BASE}/api/vote`, {
                         method: 'POST',

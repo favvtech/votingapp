@@ -53,7 +53,7 @@
             // Try with cookie first
             try {
                 response = await fetch(`${API_BASE}/api/admin/check-session`, {
-                    method: 'GET',
+                method: 'GET',
                     credentials: 'include',
                     cache: 'no-store',
                     headers: {

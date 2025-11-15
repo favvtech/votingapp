@@ -726,6 +726,7 @@ def create_app() -> Flask:
                 session['fullname'] = user['fullname']
                 session['phone'] = user['phone']
                 session['birthdate'] = user['birthdate']
+                session.permanent = True  # Ensure session cookie is set
                 return jsonify({
                     "logged_in": True,
                     "user": {
@@ -1085,6 +1086,7 @@ def create_app() -> Flask:
                 session['fullname'] = user['fullname']
                 session['phone'] = user['phone']
                 session['birthdate'] = user['birthdate']
+                session.permanent = True  # Ensure session cookie is set
                 return int(user['id'])
         return None
 
