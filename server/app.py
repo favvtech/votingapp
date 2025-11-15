@@ -1513,7 +1513,6 @@ def create_app() -> Flask:
                 # Use SQLAlchemy for PostgreSQL with transaction and row locks
                 from models import db, Vote
                 from sqlalchemy import select
-                from sqlalchemy.orm import with_for_update
                 
                 # Use transaction with row-level lock to prevent race conditions
                 with db.session.begin():
@@ -1523,6 +1522,7 @@ def create_app() -> Flask:
                         return jsonify({"success": False, "message": "Voting session is closed."}), 403
                     
                     # Check if vote already exists with row lock
+                    # with_for_update() is a method on Select objects in SQLAlchemy 2.0+, not an import
                     existing = db.session.execute(
                         select(Vote).where(
                             Vote.user_id == user_id,
