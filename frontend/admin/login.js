@@ -66,18 +66,40 @@
 
         try {
             const endpoint = selectedRole === 'admin' ? '/api/admin/login' : '/api/analyst/login';
+            
+            // Create timeout controller (fallback for browsers without AbortSignal.timeout)
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000);
+            
             const response = await fetch(`${API_BASE}${endpoint}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
                 credentials: 'include',
-                body: JSON.stringify({ access_code: code })
+                body: JSON.stringify({ access_code: code }),
+                signal: controller.signal
             });
+            
+            clearTimeout(timeoutId);
+
+            // Check if response is OK before parsing JSON
+            if (!response.ok) {
+                let errorMessage = 'Invalid access code';
+                try {
+                    const errorData = await response.json();
+                    errorMessage = errorData.message || errorMessage;
+                } catch (e) {
+                    // If response isn't JSON, use status text
+                    errorMessage = `Server error: ${response.status} ${response.statusText}`;
+                }
+                showError(errorMessage);
+                return;
+            }
 
             const data = await response.json();
 
-            if (response.ok && data.success) {
+            if (data.success) {
                 // Store access code in sessionStorage for header-based fallback
                 // Uppercase to ensure consistency with backend comparison
                 const codeUpper = code.toUpperCase().trim();
@@ -107,7 +129,13 @@
             }
         } catch (error) {
             console.error('Login error:', error);
-            showError('Network error. Please check your connection.');
+            if (error.name === 'AbortError' || error.name === 'TimeoutError') {
+                showError('Request timed out. Please check your connection and try again.');
+            } else if (error.name === 'TypeError' && error.message.includes('fetch')) {
+                showError('Cannot connect to server. Please check your connection and ensure the backend is running.');
+            } else {
+                showError('Network error. Please check your connection and ensure the backend is running.');
+            }
         } finally {
             setLoading(false);
         }

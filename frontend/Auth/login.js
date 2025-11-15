@@ -424,6 +424,10 @@
             setLoading(submitBtn, true);
 
             try {
+                // Create timeout controller (fallback for browsers without AbortSignal.timeout)
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000);
+                
                 const response = await fetch(`${API_BASE}/api/login`, {
                     method: 'POST',
                     headers: {
@@ -434,12 +438,35 @@
                         firstname,
                         lastname,
                         access_code: accessCode
-                    })
+                    }),
+                    signal: controller.signal
                 });
+                
+                clearTimeout(timeoutId);
+
+                // Check if response is OK before parsing JSON
+                if (!response.ok) {
+                    let errorMessage = 'Login failed';
+                    try {
+                        const errorData = await response.json();
+                        errorMessage = errorData.message || errorMessage;
+                    } catch (e) {
+                        errorMessage = `Server error: ${response.status} ${response.statusText}`;
+                    }
+                    
+                    if (errorMessage.toLowerCase().includes('access code')) {
+                        showError('loginAccessCode', errorMessage);
+                    } else if (errorMessage.toLowerCase().includes('sign up')) {
+                        showMessage(errorMessage, 'error');
+                    } else {
+                        showMessage(errorMessage, 'error');
+                    }
+                    return;
+                }
 
                 const data = await response.json();
 
-                if (response.ok && data.success) {
+                if (data.success) {
                     showMessage(data.message || 'Login successful! Redirecting...', 'success');
                     
                     // Store access code in sessionStorage for header-based fallback (if cookies fail)
@@ -485,9 +512,12 @@
                 }
             } catch (error) {
                 console.error('Login error:', error);
-                const errorMsg = error.message && error.message.includes('Failed to fetch')
-                    ? 'Cannot connect to backend server. Please check your connection and ensure the backend is running.'
-                    : 'Network error. Please check your connection and ensure the backend is running.';
+                let errorMsg = 'Network error. Please check your connection and ensure the backend is running.';
+                if (error.name === 'AbortError' || error.name === 'TimeoutError') {
+                    errorMsg = 'Request timed out. Please check your connection and try again.';
+                } else if (error.name === 'TypeError' && error.message.includes('fetch')) {
+                    errorMsg = 'Cannot connect to backend server. Please check your connection and ensure the backend is running.';
+                }
                 showMessage(errorMsg, 'error');
             } finally {
                 setLoading(submitBtn, false);
@@ -544,6 +574,10 @@
             setLoading(submitBtn, true);
 
             try {
+                // Create timeout controller (fallback for browsers without AbortSignal.timeout)
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000);
+                
                 const response = await fetch(`${API_BASE}/api/signup`, {
                     method: 'POST',
                     headers: {
@@ -559,12 +593,39 @@
                         day,
                         month,
                         year
-                    })
+                    }),
+                    signal: controller.signal
                 });
+                
+                clearTimeout(timeoutId);
+
+                // Check if response is OK before parsing JSON
+                if (!response.ok) {
+                    let errorMessage = 'Signup failed';
+                    try {
+                        const errorData = await response.json();
+                        errorMessage = errorData.message || errorMessage;
+                    } catch (e) {
+                        errorMessage = `Server error: ${response.status} ${response.statusText}`;
+                    }
+                    
+                    if (errorMessage.toLowerCase().includes('phone')) {
+                        showError('signupPhone', errorMessage);
+                    } else if (errorMessage.toLowerCase().includes("cant create an account")) {
+                        showError('signupFirstname', errorMessage);
+                        showError('signupPhone', errorMessage);
+                    } else if (errorMessage.includes('email')) {
+                        showError('signupEmail', errorMessage);
+                    } else {
+                        showError('signupFirstname', errorMessage);
+                    }
+                    showMessage(errorMessage, 'error');
+                    return;
+                }
 
                 const data = await response.json();
 
-                if (response.ok && data.success) {
+                if (data.success) {
                     showMessage(data.message || 'Account created successfully! Redirecting...', 'success');
                     
                     // Store access code in sessionStorage for header-based fallback (if cookies fail)
@@ -614,9 +675,12 @@
                 }
             } catch (error) {
                 console.error('Signup error:', error);
-                const errorMsg = error.message && error.message.includes('Failed to fetch')
-                    ? 'Cannot connect to backend server. Please check your connection and ensure the backend is running.'
-                    : 'Network error. Please check your connection and ensure the backend is running.';
+                let errorMsg = 'Network error. Please check your connection and ensure the backend is running.';
+                if (error.name === 'AbortError' || error.name === 'TimeoutError') {
+                    errorMsg = 'Request timed out. Please check your connection and try again.';
+                } else if (error.name === 'TypeError' && error.message.includes('fetch')) {
+                    errorMsg = 'Cannot connect to backend server. Please check your connection and ensure the backend is running.';
+                }
                 showError('signupFirstname', errorMsg);
                 showMessage(errorMsg, 'error');
             } finally {
