@@ -7,14 +7,56 @@
 
     async function checkAdminAccess() {
         try {
-            const response = await fetch(`${API_BASE}/api/admin/check-session`, {
+            // Get fallback code from sessionStorage if available (for cross-domain cookie issues)
+            let fallbackCode = null;
+            try {
+                fallbackCode = sessionStorage.getItem('admin_access_code_fallback');
+                if (fallbackCode) {
+                    fallbackCode = fallbackCode.toUpperCase().trim();
+                }
+            } catch (e) {
+                // sessionStorage not available, ignore
+            }
+            
+            // Try with cookie first
+            let response = await fetch(`${API_BASE}/api/admin/check-session`, {
                 method: 'GET',
                 credentials: 'include',
-                cache: 'no-store'
+                cache: 'no-store',
+                headers: {
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
+                }
             });
-            const data = await response.json();
             
-            if (!data.logged_in) {
+            let data = null;
+            if (response.ok) {
+                data = await response.json();
+            }
+            
+            // If session check fails, try with header fallback
+            if ((!data || !data.logged_in) && fallbackCode) {
+                try {
+                    response = await fetch(`${API_BASE}/api/admin/check-session`, {
+                        method: 'GET',
+                        credentials: 'include',
+                        cache: 'no-store',
+                        headers: {
+                            'X-Admin-Code': fallbackCode,
+                            'Cache-Control': 'no-cache',
+                            'Pragma': 'no-cache'
+                        }
+                    });
+                    
+                    if (response.ok) {
+                        data = await response.json();
+                    }
+                } catch (e) {
+                    console.warn('Header fallback check failed:', e);
+                }
+            }
+            
+            if (!data || !data.logged_in) {
                 // Redirect to admin login - use replace to prevent back button
                 window.location.replace('../admin/login.html');
                 return false;

@@ -72,7 +72,13 @@
     if (pollTimer) clearInterval(pollTimer);
     // immediate fetch with fresh data
     fetchCategoryResults(categoryIndex);
-    pollTimer = setInterval(()=> fetchCategoryResults(categoryIndex), 2000);
+    // Poll every 3 seconds (reduced from 2 to save resources)
+    // Only poll when page is visible
+    pollTimer = setInterval(()=> {
+      if (!document.hidden) {
+        fetchCategoryResults(categoryIndex);
+      }
+    }, 3000);
   }
   
   // Listen for vote reset events from admin dashboard (cross-tab communication)

@@ -440,61 +440,40 @@
                 const data = await response.json();
 
                 if (response.ok && data.success) {
-                    showMessage(data.message || 'Login successful! Verifying session...', 'success');
-                    // Clear any stale vote cache on fresh login
-                    try {
-                        localStorage.removeItem('vote_cache_timestamp');
-                        localStorage.removeItem('cached_votes');
-                        localStorage.removeItem('votes_reset');
-                    } catch (_) {}
+                    showMessage(data.message || 'Login successful! Redirecting...', 'success');
                     
-                    // Show access code if available (no localStorage storage)
+                    // Store access code in sessionStorage for header-based fallback (if cookies fail)
                     if (data.user && data.user.access_code) {
+                        try {
+                            const codeUpper = data.user.access_code.toUpperCase().trim();
+                            sessionStorage.setItem('user_access_code_fallback', codeUpper);
+                        } catch (e) {
+                            console.warn('Could not store access code in sessionStorage:', e);
+                        }
                         showAccessCode(data.user.access_code);
                     }
                     
-                    // Verify session before redirecting (important for cross-domain cookies)
-                    let sessionVerified = false;
-                    let attempts = 0;
-                    const maxAttempts = 5;
-                    
-                    while (!sessionVerified && attempts < maxAttempts) {
-                        // Wait before checking (longer wait for first attempt)
-                        await new Promise(resolve => setTimeout(resolve, attempts === 0 ? 500 : 300));
-                        
-                        try {
-                            const sessionCheck = await fetch(`${API_BASE}/api/check-session`, {
-                                method: 'GET',
-                                credentials: 'include',
-                                cache: 'no-store',
-                                headers: {
-                                    'Cache-Control': 'no-cache',
-                                    'Pragma': 'no-cache'
-                                }
-                            });
-                            
-                            if (sessionCheck.ok) {
-                                const sessionData = await sessionCheck.json();
-                                if (sessionData.logged_in && sessionData.user) {
-                                    sessionVerified = true;
-                                    break;
-                                }
+                    // Clear only stale vote cache (not all localStorage)
+                    try {
+                        // Only clear vote-related cache, keep other data
+                        const voteCacheTimestamp = localStorage.getItem('vote_cache_timestamp');
+                        if (voteCacheTimestamp) {
+                            const cacheAge = Date.now() - parseInt(voteCacheTimestamp, 10);
+                            // Only clear if cache is older than 1 hour
+                            if (cacheAge > 3600000) {
+                                localStorage.removeItem('vote_cache_timestamp');
+                                localStorage.removeItem('cached_votes');
                             }
-                        } catch (sessionError) {
-                            console.warn(`Session check attempt ${attempts + 1} failed:`, sessionError);
                         }
-                        
-                        attempts++;
-                    }
+                        localStorage.removeItem('votes_reset');
+                    } catch (_) {}
                     
-                    if (sessionVerified) {
-                        // Session confirmed - redirect to Vote page
-                        window.location.replace('../Vote/index.html');
-                    } else {
-                        // If session still not verified, show error
-                        showMessage('Session could not be established. Please try logging in again.', 'error');
-                        console.error('Session verification failed after', maxAttempts, 'attempts');
-                    }
+                    // Small delay to ensure session is set, then redirect
+                    // Don't do excessive retries - trust the backend session setting
+                    await new Promise(resolve => setTimeout(resolve, 300));
+                    
+                    // Redirect to Vote page
+                    window.location.replace('../Vote/index.html');
                 } else {
                     if (data.message && data.message.toLowerCase().includes('access code')) {
                         showError('loginAccessCode', data.message);
@@ -586,61 +565,40 @@
                 const data = await response.json();
 
                 if (response.ok && data.success) {
-                    showMessage(data.message || 'Account created successfully! Verifying session...', 'success');
-                    // Clear any stale vote cache on fresh signup
-                    try {
-                        localStorage.removeItem('vote_cache_timestamp');
-                        localStorage.removeItem('cached_votes');
-                        localStorage.removeItem('votes_reset');
-                    } catch (_) {}
+                    showMessage(data.message || 'Account created successfully! Redirecting...', 'success');
                     
-                    // Show access code if available (no localStorage storage for auth)
+                    // Store access code in sessionStorage for header-based fallback (if cookies fail)
                     if (data.user && data.user.access_code) {
+                        try {
+                            const codeUpper = data.user.access_code.toUpperCase().trim();
+                            sessionStorage.setItem('user_access_code_fallback', codeUpper);
+                        } catch (e) {
+                            console.warn('Could not store access code in sessionStorage:', e);
+                        }
                         showAccessCode(data.user.access_code);
                     }
                     
-                    // Verify session before redirecting (important for cross-domain cookies)
-                    let sessionVerified = false;
-                    let attempts = 0;
-                    const maxAttempts = 5;
-                    
-                    while (!sessionVerified && attempts < maxAttempts) {
-                        // Wait before checking (longer wait for first attempt)
-                        await new Promise(resolve => setTimeout(resolve, attempts === 0 ? 500 : 300));
-                        
-                        try {
-                            const sessionCheck = await fetch(`${API_BASE}/api/check-session`, {
-                                method: 'GET',
-                                credentials: 'include',
-                                cache: 'no-store',
-                                headers: {
-                                    'Cache-Control': 'no-cache',
-                                    'Pragma': 'no-cache'
-                                }
-                            });
-                            
-                            if (sessionCheck.ok) {
-                                const sessionData = await sessionCheck.json();
-                                if (sessionData.logged_in && sessionData.user) {
-                                    sessionVerified = true;
-                                    break;
-                                }
+                    // Clear only stale vote cache (not all localStorage)
+                    try {
+                        // Only clear vote-related cache, keep other data
+                        const voteCacheTimestamp = localStorage.getItem('vote_cache_timestamp');
+                        if (voteCacheTimestamp) {
+                            const cacheAge = Date.now() - parseInt(voteCacheTimestamp, 10);
+                            // Only clear if cache is older than 1 hour
+                            if (cacheAge > 3600000) {
+                                localStorage.removeItem('vote_cache_timestamp');
+                                localStorage.removeItem('cached_votes');
                             }
-                        } catch (sessionError) {
-                            console.warn(`Session check attempt ${attempts + 1} failed:`, sessionError);
                         }
-                        
-                        attempts++;
-                    }
+                        localStorage.removeItem('votes_reset');
+                    } catch (_) {}
                     
-                    if (sessionVerified) {
-                        // Session confirmed - redirect to Vote page
-                        window.location.replace('../Vote/index.html');
-                    } else {
-                        // If session still not verified, show error
-                        showMessage('Session could not be established. Please try signing up again.', 'error');
-                        console.error('Session verification failed after', maxAttempts, 'attempts');
-                    }
+                    // Small delay to ensure session is set, then redirect
+                    // Don't do excessive retries - trust the backend session setting
+                    await new Promise(resolve => setTimeout(resolve, 300));
+                    
+                    // Redirect to Vote page
+                    window.location.replace('../Vote/index.html');
                 } else {
                     if (data.message && data.message.toLowerCase().includes('phone')) {
                         showError('signupPhone', data.message);

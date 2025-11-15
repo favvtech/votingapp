@@ -1321,7 +1321,8 @@
             }
             
             // Refresh status periodically
-            setInterval(loadVotingStatus, 30000); // Every 30 seconds
+            // Load voting status every 60 seconds (reduced from 30 to save resources)
+            setInterval(loadVotingStatus, 60000);
         }
         
         // Reset all votes

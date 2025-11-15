@@ -6,13 +6,56 @@
     // Auth check on page load - redirect if not authenticated
     async function checkAuthAndRedirect() {
         try {
-            const response = await fetch(`${API_BASE}/api/check-session`, {
+            // Get fallback code from sessionStorage if available (for cross-domain cookie issues)
+            let fallbackCode = null;
+            try {
+                fallbackCode = sessionStorage.getItem('user_access_code_fallback');
+                if (fallbackCode) {
+                    fallbackCode = fallbackCode.toUpperCase().trim();
+                }
+            } catch (e) {
+                // sessionStorage not available, ignore
+            }
+            
+            // Try with cookie first
+            let response = await fetch(`${API_BASE}/api/check-session`, {
                 method: 'GET',
                 credentials: 'include',
-                cache: 'no-store'
+                cache: 'no-store',
+                headers: {
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
+                }
             });
-            const data = await response.json();
-            if (!data.logged_in || !data.user) {
+            
+            let data = null;
+            if (response.ok) {
+                data = await response.json();
+            }
+            
+            // If session check fails, try with header fallback
+            if ((!data || !data.logged_in || !data.user) && fallbackCode) {
+                try {
+                    response = await fetch(`${API_BASE}/api/check-session`, {
+                        method: 'GET',
+                        credentials: 'include',
+                        cache: 'no-store',
+                        headers: {
+                            'X-Access-Code': fallbackCode,
+                            'Cache-Control': 'no-cache',
+                            'Pragma': 'no-cache'
+                        }
+                    });
+                    
+                    if (response.ok) {
+                        data = await response.json();
+                    }
+                } catch (e) {
+                    console.warn('Header fallback check failed:', e);
+                }
+            }
+            
+            if (!data || !data.logged_in || !data.user) {
                 // Not authenticated - redirect to login
                 window.location.replace('../Auth/login.html');
                 return false;
@@ -899,7 +942,8 @@
         // Check voting status
         await checkVotingStatus();
         // Check periodically (every 30 seconds)
-        setInterval(checkVotingStatus, 30000);
+        // Check voting status every 60 seconds (reduced from 30 to save resources)
+        setInterval(checkVotingStatus, 60000);
         
         // Initialize inactivity detection
         initInactivityDetection();
