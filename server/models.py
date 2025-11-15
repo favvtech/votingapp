@@ -3,7 +3,7 @@ Database models using SQLAlchemy for PostgreSQL support.
 Falls back to SQLite if DATABASE_URL is not set.
 """
 from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime
+from datetime import datetime, timedelta
 
 db = SQLAlchemy()
 
@@ -53,5 +53,61 @@ class Vote(db.Model):
             'category_id': self.category_id,
             'nominee_id': self.nominee_id,
             'created_at': self.created_at.isoformat() if self.created_at else None
+        }
+
+
+class Session(db.Model):
+    """DB-backed session storage for persistence across container restarts"""
+    __tablename__ = 'sessions'
+    
+    id = db.Column(db.String(255), primary_key=True)  # session_id
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    data = db.Column(db.Text, nullable=True)  # JSON string of session data
+    last_active = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'last_active': self.last_active.isoformat() if self.last_active else None,
+            'expires_at': self.expires_at.isoformat() if self.expires_at else None
+        }
+
+
+class VotingConfig(db.Model):
+    """Persistent voting session configuration"""
+    __tablename__ = 'voting_config'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    key = db.Column(db.String(50), unique=True, nullable=False, default='voting_active')
+    value = db.Column(db.String(255), nullable=False)  # Store as string, parse as needed
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_by = db.Column(db.String(50), nullable=True)  # admin_id or 'system'
+    
+    def to_dict(self):
+        return {
+            'key': self.key,
+            'value': self.value,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'updated_by': self.updated_by
+        }
+
+
+class UserState(db.Model):
+    """Client-side state persistence for optional restore after re-login"""
+    __tablename__ = 'user_states'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, unique=True)
+    state_json = db.Column(db.Text, nullable=True)  # JSON string of sanitized client state
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    def to_dict(self):
+        return {
+            'user_id': self.user_id,
+            'state_json': self.state_json,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
 

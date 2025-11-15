@@ -83,6 +83,49 @@ def init_db():
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_votes_category ON votes(category_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_votes_nominee ON votes(nominee_id)')
     
+    # Sessions table: DB-backed session storage
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS sessions (
+            id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            data TEXT,
+            last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP NOT NULL,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at)')
+    
+    # Voting config table: persistent voting session toggle
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS voting_config (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            key TEXT UNIQUE NOT NULL DEFAULT 'voting_active',
+            value TEXT NOT NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_by TEXT
+        )
+    ''')
+    # Initialize voting_active to True if not exists
+    cursor.execute('''
+        INSERT OR IGNORE INTO voting_config (key, value, updated_by) 
+        VALUES ('voting_active', 'true', 'system')
+    ''')
+    
+    # User states table: client-side state persistence
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS user_states (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER UNIQUE NOT NULL,
+            state_json TEXT,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_user_states_user_id ON user_states(user_id)')
+    
     conn.commit()
     conn.close()
     print("Database initialized")
@@ -221,6 +264,210 @@ def get_user_by_access_code(code: str) -> Optional[sqlite3.Row]:
     conn.close()
     return user
 
+# Helper functions for DB-backed sessions and voting config
+def get_voting_active_from_db(use_postgresql: bool) -> bool:
+    """Get voting_active status from database (persistent across restarts)"""
+    try:
+        if use_postgresql:
+            from models import db, VotingConfig
+            config = VotingConfig.query.filter_by(key='voting_active').first()
+            if config:
+                return config.value.lower() == 'true'
+            # Initialize if not exists
+            config = VotingConfig(key='voting_active', value='true', updated_by='system')
+            db.session.add(config)
+            db.session.commit()
+            return True
+        else:
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT value FROM voting_config WHERE key = 'voting_active'")
+            row = cursor.fetchone()
+            conn.close()
+            if row:
+                return row[0].lower() == 'true'
+            # Initialize if not exists
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT OR IGNORE INTO voting_config (key, value, updated_by) VALUES ('voting_active', 'true', 'system')"
+            )
+            conn.commit()
+            conn.close()
+            return True
+    except Exception as e:
+        logger.error(f"Error getting voting_active from DB: {e}", exc_info=True)
+        return True  # Default to active on error
+
+def set_voting_active_in_db(use_postgresql: bool, active: bool, updated_by: str = 'admin') -> bool:
+    """Set voting_active status in database atomically"""
+    try:
+        value = 'true' if active else 'false'
+        if use_postgresql:
+            from models import db, VotingConfig
+            config = VotingConfig.query.filter_by(key='voting_active').first()
+            if config:
+                config.value = value
+                config.updated_by = updated_by
+            else:
+                config = VotingConfig(key='voting_active', value=value, updated_by=updated_by)
+                db.session.add(config)
+            db.session.commit()
+            return True
+        else:
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT OR REPLACE INTO voting_config (key, value, updated_by, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
+                ('voting_active', value, updated_by)
+            )
+            conn.commit()
+            conn.close()
+            return True
+    except Exception as e:
+        logger.error(f"Error setting voting_active in DB: {e}", exc_info=True)
+        return False
+
+def save_session_to_db(use_postgresql: bool, session_id: str, user_id: int, session_data: dict, expires_at: datetime) -> bool:
+    """Save session to database for persistence"""
+    try:
+        import json
+        data_json = json.dumps(session_data) if session_data else None
+        if use_postgresql:
+            from models import db, Session
+            db_session = Session.query.filter_by(id=session_id).first()
+            if db_session:
+                db_session.user_id = user_id
+                db_session.data = data_json
+                db_session.last_active = datetime.utcnow()
+                db_session.expires_at = expires_at
+            else:
+                db_session = Session(
+                    id=session_id,
+                    user_id=user_id,
+                    data=data_json,
+                    expires_at=expires_at
+                )
+                db.session.add(db_session)
+            db.session.commit()
+            return True
+        else:
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute(
+                """INSERT OR REPLACE INTO sessions (id, user_id, data, last_active, expires_at) 
+                   VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?)""",
+                (session_id, user_id, data_json, expires_at.isoformat())
+            )
+            conn.commit()
+            conn.close()
+            return True
+    except Exception as e:
+        logger.error(f"Error saving session to DB: {e}", exc_info=True)
+        return False
+
+def get_session_from_db(use_postgresql: bool, session_id: str) -> Optional[dict]:
+    """Get session from database and check if valid"""
+    try:
+        if use_postgresql:
+            from models import db, Session
+            db_session = Session.query.filter_by(id=session_id).first()
+            if not db_session:
+                return None
+            # Check if expired
+            if datetime.utcnow() > db_session.expires_at:
+                # Delete expired session
+                db.session.delete(db_session)
+                db.session.commit()
+                return None
+            # Update last_active
+            db_session.last_active = datetime.utcnow()
+            db.session.commit()
+            import json
+            data = json.loads(db_session.data) if db_session.data else {}
+            return {
+                'user_id': db_session.user_id,
+                'data': data,
+                'last_active': db_session.last_active
+            }
+        else:
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT user_id, data, last_active, expires_at FROM sessions WHERE id = ?",
+                (session_id,)
+            )
+            row = cursor.fetchone()
+            if not row:
+                conn.close()
+                return None
+            # Check if expired
+            expires_at = datetime.fromisoformat(row[3]) if isinstance(row[3], str) else row[3]
+            if datetime.utcnow() > expires_at:
+                cursor.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+                conn.commit()
+                conn.close()
+                return None
+            # Update last_active
+            cursor.execute(
+                "UPDATE sessions SET last_active = CURRENT_TIMESTAMP WHERE id = ?",
+                (session_id,)
+            )
+            conn.commit()
+            conn.close()
+            import json
+            data = json.loads(row[1]) if row[1] else {}
+            return {
+                'user_id': row[0],
+                'data': data,
+                'last_active': row[2]
+            }
+    except Exception as e:
+        logger.error(f"Error getting session from DB: {e}", exc_info=True)
+        return None
+
+def delete_session_from_db(use_postgresql: bool, session_id: str) -> bool:
+    """Delete session from database"""
+    try:
+        if use_postgresql:
+            from models import db, Session
+            Session.query.filter_by(id=session_id).delete()
+            db.session.commit()
+            return True
+        else:
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+            conn.commit()
+            conn.close()
+            return True
+    except Exception as e:
+        logger.error(f"Error deleting session from DB: {e}", exc_info=True)
+        return False
+
+def cleanup_expired_sessions(use_postgresql: bool) -> int:
+    """Clean up expired sessions (call periodically)"""
+    try:
+        if use_postgresql:
+            from models import db, Session
+            expired = Session.query.filter(Session.expires_at < datetime.utcnow()).all()
+            count = len(expired)
+            for s in expired:
+                db.session.delete(s)
+            db.session.commit()
+            return count
+        else:
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM sessions WHERE expires_at < CURRENT_TIMESTAMP")
+            count = cursor.rowcount
+            conn.commit()
+            conn.close()
+            return count
+    except Exception as e:
+        logger.error(f"Error cleaning up expired sessions: {e}", exc_info=True)
+        return 0
+
 # authenticate_request is now defined inside create_app() as authenticate_request_helper()
 
 def generate_access_code() -> str:
@@ -265,8 +512,7 @@ def create_app() -> Flask:
     # Store DATABASE_URL in app config for access in routes
     app.config['DATABASE_URL'] = DATABASE_URL
     app.config['USE_POSTGRESQL'] = bool(DATABASE_URL)
-    # Voting session state - defaults to True (active)
-    app.config['VOTING_ACTIVE'] = True
+    # Voting session state will be loaded from DB after init_db
     
     # Database configuration
     # If DATABASE_URL is set (PostgreSQL), configure SQLAlchemy
@@ -367,6 +613,14 @@ def create_app() -> Flask:
     # Load birthdates and initialize database on startup
     load_birthdates()
     init_db()
+    
+    # Initialize voting_active from DB (persistent across restarts)
+    use_postgresql = app.config.get('USE_POSTGRESQL', False)
+    app.config['VOTING_ACTIVE'] = get_voting_active_from_db(use_postgresql)
+    logger.info(f"✅ Voting session initialized from DB: {'active' if app.config['VOTING_ACTIVE'] else 'inactive'}")
+    
+    # Clean up expired sessions on startup
+    cleanup_expired_sessions(use_postgresql)
 
     @app.get("/api/hero-images")
     def hero_images():
@@ -531,6 +785,20 @@ def create_app() -> Flask:
                 
                 logger.info(f"✅ User created in SQLite: ID={user_id}, Name={fullname}, Code={access_code}")
             
+            # Create DB-backed session
+            session_id = secrets.token_urlsafe(32)
+            expires_at = datetime.utcnow() + timedelta(days=31)
+            session_data = {
+                'user_id': user_id,
+                'access_code': access_code,
+                'fullname': fullname,
+                'phone': normalized_phone,
+                'birthdate': formatted_birthdate
+            }
+            save_session_to_db(use_postgresql, session_id, user_id, session_data, expires_at)
+            
+            # Create Flask session
+            session['_id'] = session_id
             session['user_id'] = user_id
             session['phone'] = normalized_phone
             session['fullname'] = fullname
@@ -638,7 +906,20 @@ def create_app() -> Flask:
                 conn.close()
                 logger.info(f"✅ User logged in from SQLite: ID={user_dict['id']}, Name={user_dict['fullname']}")
             
-            # Create session
+            # Create DB-backed session
+            session_id = secrets.token_urlsafe(32)
+            expires_at = datetime.utcnow() + timedelta(days=31)
+            session_data = {
+                'user_id': user_dict['id'],
+                'access_code': user_dict['access_code'],
+                'fullname': user_dict['fullname'],
+                'phone': user_dict['phone'],
+                'birthdate': user_dict.get('birthdate')
+            }
+            save_session_to_db(use_postgresql, session_id, user_dict['id'], session_data, expires_at)
+            
+            # Create Flask session
+            session['_id'] = session_id
             session['user_id'] = user_dict['id']
             session['phone'] = user_dict['phone']
             session['fullname'] = user_dict['fullname']
@@ -668,81 +949,67 @@ def create_app() -> Flask:
 
     @app.get("/api/check-session")
     def check_session():
-        """Check if user is logged in - supports both session cookies and header-based auth"""
-        # Try session first
-        if 'user_id' in session:
+        """Check if user is logged in - uses DB-backed sessions"""
+        try:
+            user_id = authenticate_request_helper()
+            if not user_id:
+                response = jsonify({"logged_in": False})
+                response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+                response.headers['Pragma'] = 'no-cache'
+                return response
+            
+            # Get user details
             use_postgresql = app.config.get('USE_POSTGRESQL', False)
-            try:
-                if use_postgresql:
-                    # Use SQLAlchemy for PostgreSQL
-                    from models import db, User
-                    user = User.query.filter_by(id=session['user_id']).first()
-                    if user:
-                        return jsonify({
-                            "logged_in": True,
-                            "user": {
-                                "id": user.id,
-                                "fullname": user.fullname,
-                                "phone": user.phone,
-                                "email": user.email,
-                                "access_code": user.access_code
-                            }
-                        })
-                else:
-                    # Use SQLite
-                    conn = get_db()
-                    cursor = conn.cursor()
-                    cursor.execute("SELECT * FROM users WHERE id = ?", (session['user_id'],))
-                    user = cursor.fetchone()
-                    conn.close()
-                    
-                    if user:
-                        return jsonify({
-                            "logged_in": True,
-                            "user": {
-                                "id": user['id'],
-                                "fullname": user['fullname'],
-                                "phone": user['phone'],
-                                "email": user['email'],
-                                "access_code": user['access_code']
-                            }
-                        })
-            except Exception as e:
-                logger.error(f"❌ Error checking session: {e}", exc_info=True)
-        
-        # Fallback: header-based authentication
-        code = request.headers.get('X-Access-Code', '').strip()
-        if not code:
-            auth = request.headers.get('Authorization', '')
-            if auth.lower().startswith('bearer '):
-                code = auth.split(' ', 1)[1].strip()
-        
-        if code:
-            user = get_user_by_access_code_helper(code)
-            if user:
-                # Create session for future requests
-                session['user_id'] = user['id']
-                session['access_code'] = user['access_code']
-                session['fullname'] = user['fullname']
-                session['phone'] = user['phone']
-                session['birthdate'] = user['birthdate']
-                session.permanent = True  # Ensure session cookie is set
-                return jsonify({
-                    "logged_in": True,
-                    "user": {
-                        "id": user['id'],
-                        "fullname": user['fullname'],
-                        "phone": user['phone'],
-                        "email": user['email'],
-                        "access_code": user['access_code']
-                    }
-                })
-        
-        return jsonify({"logged_in": False})
+            if use_postgresql:
+                from models import db, User
+                user = User.query.filter_by(id=user_id).first()
+                if not user:
+                    response = jsonify({"logged_in": False})
+                    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+                    response.headers['Pragma'] = 'no-cache'
+                    return response
+                user_dict = user.to_dict()
+            else:
+                conn = get_db()
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+                user = cursor.fetchone()
+                conn.close()
+                if not user:
+                    response = jsonify({"logged_in": False})
+                    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+                    response.headers['Pragma'] = 'no-cache'
+                    return response
+                user_dict = dict(user)
+            
+            response = jsonify({
+                "logged_in": True,
+                "user": {
+                    "id": user_dict['id'],
+                    "fullname": user_dict['fullname'],
+                    "phone": user_dict.get('phone'),
+                    "email": user_dict.get('email'),
+                    "access_code": user_dict.get('access_code')
+                }
+            })
+            response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+            response.headers['Pragma'] = 'no-cache'
+            return response
+        except Exception as e:
+            logger.error(f"Error checking session: {e}", exc_info=True)
+            # On error, return not authenticated (never return 500 for auth checks)
+            response = jsonify({"logged_in": False, "error": "Server error"})
+            response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+            response.headers['Pragma'] = 'no-cache'
+            return response
 
     @app.post("/api/logout")
     def logout():
-        """Logout user"""
+        """Logout user - invalidate DB session"""
+        session_id = session.get('_id') or session.get('session_id')
+        if session_id:
+            use_postgresql = app.config.get('USE_POSTGRESQL', False)
+            delete_session_from_db(use_postgresql, session_id)
         session.clear()
         response = jsonify({"success": True, "message": "Logged out successfully"})
         # Prevent caching of logout response and protect against back-button
@@ -751,12 +1018,180 @@ def create_app() -> Flask:
         response.headers['Expires'] = '0'
         return response
 
+    @app.get("/auth/session")
+    def check_auth_session():
+        """Check if user is authenticated - returns { authenticated: true/false, user: {...} }"""
+        try:
+            user_id = authenticate_request_helper()
+            if not user_id:
+                response = jsonify({"authenticated": False})
+                response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+                response.headers['Pragma'] = 'no-cache'
+                return response
+            
+            # Get user details
+            use_postgresql = app.config.get('USE_POSTGRESQL', False)
+            if use_postgresql:
+                from models import db, User
+                user = User.query.filter_by(id=user_id).first()
+                if not user:
+                    response = jsonify({"authenticated": False})
+                    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+                    response.headers['Pragma'] = 'no-cache'
+                    return response
+                user_dict = user.to_dict()
+            else:
+                conn = get_db()
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+                user = cursor.fetchone()
+                conn.close()
+                if not user:
+                    response = jsonify({"authenticated": False})
+                    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+                    response.headers['Pragma'] = 'no-cache'
+                    return response
+                user_dict = dict(user)
+            
+            response = jsonify({
+                "authenticated": True,
+                "user": {
+                    "id": user_dict['id'],
+                    "fullname": user_dict['fullname'],
+                    "phone": user_dict.get('phone'),
+                    "email": user_dict.get('email')
+                }
+            })
+            response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+            response.headers['Pragma'] = 'no-cache'
+            return response
+        except Exception as e:
+            logger.error(f"Error checking auth session: {e}", exc_info=True)
+            response = jsonify({"authenticated": False, "error": "Server error"})
+            response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+            response.headers['Pragma'] = 'no-cache'
+            return response
+    
+    @app.get("/user/access-code")
+    def get_user_access_code():
+        """Get logged-in user's access code (only if authenticated)"""
+        user_id = authenticate_request_helper()
+        if not user_id:
+            return jsonify({"success": False, "message": "Not authenticated"}), 401
+        
+        use_postgresql = app.config.get('USE_POSTGRESQL', False)
+        try:
+            if use_postgresql:
+                from models import db, User
+                user = User.query.filter_by(id=user_id).first()
+                if not user:
+                    return jsonify({"success": False, "message": "User not found"}), 404
+                return jsonify({"success": True, "access_code": user.access_code})
+            else:
+                conn = get_db()
+                cursor = conn.cursor()
+                cursor.execute("SELECT access_code FROM users WHERE id = ?", (user_id,))
+                row = cursor.fetchone()
+                conn.close()
+                if not row:
+                    return jsonify({"success": False, "message": "User not found"}), 404
+                return jsonify({"success": True, "access_code": row[0]})
+        except Exception as e:
+            logger.error(f"Error getting access code: {e}", exc_info=True)
+            return jsonify({"success": False, "message": "Server error"}), 500
+    
+    @app.post("/api/save-client-state")
+    def save_client_state():
+        """Save client-side state for optional restore after re-login"""
+        user_id = authenticate_request_helper()
+        if not user_id:
+            return jsonify({"success": False, "message": "Not authenticated"}), 401
+        
+        data = request.get_json() or {}
+        # Sanitize: only allow safe fields, no credentials
+        safe_state = {
+            'currentView': data.get('currentView'),
+            'currentCategory': data.get('currentCategory'),
+            'pendingFormData': {}  # Never store form data with credentials
+        }
+        
+        # Remove any potentially sensitive fields
+        if 'pendingFormData' in data:
+            form_data = data.get('pendingFormData', {})
+            for key in ['password', 'access_code', 'token', 'secret']:
+                if key in form_data:
+                    del form_data[key]
+            safe_state['pendingFormData'] = {k: v for k, v in form_data.items() if not any(sensitive in k.lower() for sensitive in ['pass', 'code', 'token', 'secret'])}
+        
+        import json
+        state_json = json.dumps(safe_state)
+        
+        use_postgresql = app.config.get('USE_POSTGRESQL', False)
+        try:
+            if use_postgresql:
+                from models import db, UserState
+                user_state = UserState.query.filter_by(user_id=user_id).first()
+                if user_state:
+                    user_state.state_json = state_json
+                else:
+                    user_state = UserState(user_id=user_id, state_json=state_json)
+                    db.session.add(user_state)
+                db.session.commit()
+                return jsonify({"success": True, "message": "State saved"})
+            else:
+                conn = get_db()
+                cursor = conn.cursor()
+                cursor.execute(
+                    "INSERT OR REPLACE INTO user_states (user_id, state_json, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+                    (user_id, state_json)
+                )
+                conn.commit()
+                conn.close()
+                return jsonify({"success": True, "message": "State saved"})
+        except Exception as e:
+            logger.error(f"Error saving client state: {e}", exc_info=True)
+            return jsonify({"success": False, "message": "Failed to save state"}), 500
+    
+    @app.get("/api/get-client-state")
+    def get_client_state():
+        """Get saved client-side state for optional restore"""
+        user_id = authenticate_request_helper()
+        if not user_id:
+            return jsonify({"success": False, "message": "Not authenticated"}), 401
+        
+        use_postgresql = app.config.get('USE_POSTGRESQL', False)
+        try:
+            if use_postgresql:
+                from models import db, UserState
+                user_state = UserState.query.filter_by(user_id=user_id).first()
+                if not user_state or not user_state.state_json:
+                    return jsonify({"success": True, "state": None})
+                import json
+                state = json.loads(user_state.state_json)
+                return jsonify({"success": True, "state": state})
+            else:
+                conn = get_db()
+                cursor = conn.cursor()
+                cursor.execute("SELECT state_json FROM user_states WHERE user_id = ?", (user_id,))
+                row = cursor.fetchone()
+                conn.close()
+                if not row or not row[0]:
+                    return jsonify({"success": True, "state": None})
+                import json
+                state = json.loads(row[0])
+                return jsonify({"success": True, "state": state})
+        except Exception as e:
+            logger.error(f"Error getting client state: {e}", exc_info=True)
+            return jsonify({"success": False, "message": "Failed to get state"}), 500
+
     @app.post("/api/vote")
     def cast_vote():
         """Cast a vote for a nominee in a category; one vote per user per category"""
-        # CRITICAL: Check voting status FIRST before any other processing
+        # CRITICAL: Check voting status FIRST from DB before any other processing
         # This prevents any race conditions or rapid-click bypasses
-        if not app.config.get('VOTING_ACTIVE', True):
+        use_postgresql = app.config.get('USE_POSTGRESQL', False)
+        voting_active = get_voting_active_from_db(use_postgresql)
+        if not voting_active:
             return jsonify({"success": False, "message": "Voting session is closed."}), 403
         
         # Authenticate user
@@ -821,34 +1256,74 @@ def create_app() -> Flask:
         use_postgresql = app.config.get('USE_POSTGRESQL', False)
         try:
             if use_postgresql:
-                # Use SQLAlchemy for PostgreSQL
+                # Use SQLAlchemy for PostgreSQL with transaction and row locks
                 from models import db, Vote
-                # Check if vote already exists
-                existing = Vote.query.filter_by(user_id=user_id, category_id=category_id).first()
-                if existing:
-                    return jsonify({"success": False, "message": "You have already voted in this category"}), 409
-                # Create new vote
-                new_vote = Vote(user_id=user_id, category_id=category_id, nominee_id=nominee_id)
-                db.session.add(new_vote)
-                db.session.commit()
+                from sqlalchemy import select
+                from sqlalchemy.orm import with_for_update
+                
+                # Use transaction with row-level lock to prevent race conditions
+                with db.session.begin():
+                    # Check voting_active again within transaction (double-check)
+                    voting_active_check = get_voting_active_from_db(use_postgresql)
+                    if not voting_active_check:
+                        return jsonify({"success": False, "message": "Voting session is closed."}), 403
+                    
+                    # Check if vote already exists with row lock
+                    existing = db.session.execute(
+                        select(Vote).where(
+                            Vote.user_id == user_id,
+                            Vote.category_id == category_id
+                        ).with_for_update()
+                    ).scalar_one_or_none()
+                    
+                    if existing:
+                        return jsonify({"success": False, "message": "You have already voted in this category"}), 409
+                    
+                    # Create new vote atomically
+                    new_vote = Vote(user_id=user_id, category_id=category_id, nominee_id=nominee_id)
+                    db.session.add(new_vote)
+                    # commit() is called automatically by context manager
+                
                 logger.info(f"✅ Vote recorded: user {user_id}, category {category_id}, nominee {nominee_id}")
                 return jsonify({"success": True, "message": "Vote recorded"}), 201
             else:
-                # Use SQLite
+                # Use SQLite with transaction
                 conn = get_db()
-                cur = conn.cursor()
-                cur.execute(
-                    "INSERT OR IGNORE INTO votes (user_id, category_id, nominee_id) VALUES (?, ?, ?)",
-                    (user_id, category_id, nominee_id)
-                )
-                if cur.rowcount == 0:
-                    # User already voted in this category
+                try:
+                    # Begin transaction
+                    conn.execute("BEGIN IMMEDIATE")
+                    cur = conn.cursor()
+                    
+                    # Check voting_active again within transaction (double-check)
+                    voting_active_check = get_voting_active_from_db(use_postgresql)
+                    if not voting_active_check:
+                        conn.rollback()
+                        conn.close()
+                        return jsonify({"success": False, "message": "Voting session is closed."}), 403
+                    
+                    # Check if vote already exists (SQLite doesn't support SELECT FOR UPDATE, but transaction provides isolation)
+                    cur.execute(
+                        "SELECT id FROM votes WHERE user_id = ? AND category_id = ?",
+                        (user_id, category_id)
+                    )
+                    if cur.fetchone():
+                        conn.rollback()
+                        conn.close()
+                        return jsonify({"success": False, "message": "You have already voted in this category"}), 409
+                    
+                    # Create new vote atomically
+                    cur.execute(
+                        "INSERT INTO votes (user_id, category_id, nominee_id) VALUES (?, ?, ?)",
+                        (user_id, category_id, nominee_id)
+                    )
+                    conn.commit()
+                    logger.info(f"✅ Vote recorded: user {user_id}, category {category_id}, nominee {nominee_id}")
+                    return jsonify({"success": True, "message": "Vote recorded"}), 201
+                except Exception as e:
+                    conn.rollback()
+                    raise e
+                finally:
                     conn.close()
-                    return jsonify({"success": False, "message": "You have already voted in this category"}), 409
-                conn.commit()
-                conn.close()
-                logger.info(f"✅ Vote recorded: user {user_id}, category {category_id}, nominee {nominee_id}")
-                return jsonify({"success": True, "message": "Vote recorded"}), 201
         except Exception as e:
             logger.error(f"❌ Error recording vote: {e}", exc_info=True)
             if use_postgresql:
@@ -1070,9 +1545,35 @@ def create_app() -> Flask:
                 return []
 
     def authenticate_request_helper() -> Optional[int]:
-        """Return user_id if request is authenticated via session or access code header."""
+        """Return user_id if request is authenticated via DB-backed session or access code header."""
+        use_postgresql = app.config.get('USE_POSTGRESQL', False)
+        
+        # Check Flask session first (for backward compatibility)
         if 'user_id' in session:
-            return int(session['user_id'])
+            session_id = session.get('_id') or session.get('session_id')
+            if session_id:
+                # Verify session in DB and update last_active
+                db_session = get_session_from_db(use_postgresql, session_id)
+                if db_session:
+                    # Check inactivity timeout (30 minutes)
+                    last_active = db_session.get('last_active')
+                    if last_active:
+                        if isinstance(last_active, str):
+                            last_active = datetime.fromisoformat(last_active.replace('Z', '+00:00'))
+                        elif isinstance(last_active, datetime):
+                            pass
+                        else:
+                            last_active = datetime.utcnow()
+                        if (datetime.utcnow() - last_active.replace(tzinfo=None)).total_seconds() > 1800:  # 30 minutes
+                            # Session expired due to inactivity
+                            delete_session_from_db(use_postgresql, session_id)
+                            session.clear()
+                            return None
+                    return int(session['user_id'])
+            else:
+                # Legacy session without DB backup - still valid but should be migrated
+                return int(session['user_id'])
+        
         # Header-based fallback: X-Access-Code or Bearer <code>
         code = request.headers.get('X-Access-Code', '').strip()
         if not code:
@@ -1082,13 +1583,26 @@ def create_app() -> Flask:
         if code:
             user = get_user_by_access_code_helper(code)
             if user:
-                # optionally attach a lightweight session
+                # Create DB-backed session
+                session_id = secrets.token_urlsafe(32)
+                expires_at = datetime.utcnow() + timedelta(days=31)
+                session_data = {
+                    'user_id': user['id'],
+                    'access_code': user['access_code'],
+                    'fullname': user['fullname'],
+                    'phone': user['phone'],
+                    'birthdate': user.get('birthdate')
+                }
+                save_session_to_db(use_postgresql, session_id, user['id'], session_data, expires_at)
+                
+                # Set Flask session
+                session['_id'] = session_id
                 session['user_id'] = user['id']
                 session['access_code'] = user['access_code']
                 session['fullname'] = user['fullname']
                 session['phone'] = user['phone']
-                session['birthdate'] = user['birthdate']
-                session.permanent = True  # Ensure session cookie is set
+                session['birthdate'] = user.get('birthdate')
+                session.permanent = True
                 return int(user['id'])
         return None
 
@@ -1221,20 +1735,37 @@ def create_app() -> Flask:
         """Get current voting session status (admin only)"""
         if not require_admin():
             return jsonify({"success": False, "message": "Admin access required"}), 403
+        use_postgresql = app.config.get('USE_POSTGRESQL', False)
+        voting_active = get_voting_active_from_db(use_postgresql)
+        # Update app.config cache
+        app.config['VOTING_ACTIVE'] = voting_active
         return jsonify({
             "success": True,
-            "voting_active": app.config.get('VOTING_ACTIVE', True)
+            "voting_active": voting_active
         })
     
     @app.post("/api/admin/voting-status")
     def set_voting_status():
-        """Set voting session status (admin only)"""
+        """Set voting session status (admin only) - atomically updates DB"""
         if not require_admin():
             return jsonify({"success": False, "message": "Admin access required"}), 403
         data = request.get_json() or {}
         voting_active = data.get('voting_active', True)
+        use_postgresql = app.config.get('USE_POSTGRESQL', False)
+        
+        # Get admin ID for logging
+        admin_id = 'admin'  # Could be enhanced to get actual admin ID
+        if 'admin_authenticated' in session:
+            admin_id = f"admin_{session.get('admin_role', 'admin')}"
+        
+        # Atomically update DB
+        success = set_voting_active_in_db(use_postgresql, bool(voting_active), updated_by=admin_id)
+        if not success:
+            return jsonify({"success": False, "message": "Failed to update voting status"}), 500
+        
+        # Update app.config cache
         app.config['VOTING_ACTIVE'] = bool(voting_active)
-        logger.info(f"✅ Voting session {'activated' if voting_active else 'deactivated'} by admin")
+        logger.info(f"✅ Voting session {'activated' if voting_active else 'deactivated'} by {admin_id}")
         return jsonify({
             "success": True,
             "voting_active": app.config['VOTING_ACTIVE'],
@@ -1244,9 +1775,13 @@ def create_app() -> Flask:
     @app.get("/api/voting-status")
     def public_voting_status():
         """Get current voting session status (public endpoint for user UI)"""
+        use_postgresql = app.config.get('USE_POSTGRESQL', False)
+        voting_active = get_voting_active_from_db(use_postgresql)
+        # Update app.config cache
+        app.config['VOTING_ACTIVE'] = voting_active
         return jsonify({
             "success": True,
-            "voting_active": app.config.get('VOTING_ACTIVE', True)
+            "voting_active": voting_active
         })
 
     @app.post("/api/admin/reset-votes")
