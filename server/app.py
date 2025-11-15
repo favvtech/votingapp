@@ -1514,26 +1514,28 @@ def create_app() -> Flask:
                 from models import db, Vote
                 from sqlalchemy import select
                 
-                # Use transaction with row-level lock to prevent race conditions
-                # Note: We already checked voting_active before starting the transaction (line 1447)
-                # We don't check again inside the transaction to avoid nested transaction errors
-                with db.session.begin():
-                    # Check if vote already exists with row lock
-                    # with_for_update() is a method on Select objects in SQLAlchemy 2.0+, not an import
-                    existing = db.session.execute(
-                        select(Vote).where(
-                            Vote.user_id == user_id,
-                            Vote.category_id == category_id
-                        ).with_for_update()
-                    ).scalar_one_or_none()
-                    
-                    if existing:
-                        return jsonify({"success": False, "message": "You have already voted in this category"}), 409
-                    
-                    # Create new vote atomically
-                    new_vote = Vote(user_id=user_id, category_id=category_id, nominee_id=nominee_id)
-                    db.session.add(new_vote)
-                    # commit() is called automatically by context manager
+                # Flask-SQLAlchemy auto-begins transactions, so we don't need to call begin() explicitly
+                # However, previous operations (get_voting_active_from_db, authenticate_request_helper)
+                # may have committed, leaving us in a clean state. We'll use the session normally.
+                
+                # Check if vote already exists with row lock
+                # with_for_update() requires a transaction, which Flask-SQLAlchemy provides automatically
+                # with_for_update() is a method on Select objects in SQLAlchemy 2.0+, not an import
+                existing = db.session.execute(
+                    select(Vote).where(
+                        Vote.user_id == user_id,
+                        Vote.category_id == category_id
+                    ).with_for_update()
+                ).scalar_one_or_none()
+                
+                if existing:
+                    db.session.rollback()
+                    return jsonify({"success": False, "message": "You have already voted in this category"}), 409
+                
+                # Create new vote atomically
+                new_vote = Vote(user_id=user_id, category_id=category_id, nominee_id=nominee_id)
+                db.session.add(new_vote)
+                db.session.commit()
                 
                 logger.info(f"✅ Vote recorded: user {user_id}, category {category_id}, nominee {nominee_id}")
                 return jsonify({"success": True, "message": "Vote recorded"}), 201
