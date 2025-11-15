@@ -474,28 +474,36 @@
                         try {
                             const codeUpper = data.user.access_code.toUpperCase().trim();
                             sessionStorage.setItem('user_access_code_fallback', codeUpper);
+                            console.log('Access code stored in sessionStorage:', codeUpper);
                         } catch (e) {
                             console.warn('Could not store access code in sessionStorage:', e);
                         }
-                        // Show access code - ensure DOM elements exist
+                        // Show access code - CRITICAL: Users must see this before redirect
                         const codeToShow = data.user.access_code;
                         const showCode = () => {
+                            // Always get fresh references to ensure elements exist
                             const circle = document.getElementById('accessCodeCircle');
                             const display = document.getElementById('acCodeDisplay');
                             if (circle && display) {
                                 display.textContent = codeToShow;
                                 circle.style.display = 'block';
+                                // Force visibility
+                                circle.style.visibility = 'visible';
+                                circle.style.opacity = '1';
+                                // Show popup immediately
                                 setTimeout(() => {
                                     circle.classList.add('show-popup');
-                                }, 500);
+                                }, 100);
+                                console.log('Access code displayed:', codeToShow);
+                            } else {
+                                console.error('Access code elements not found:', { circle: !!circle, display: !!display });
                             }
                         };
-                        // Try immediately, then retry if elements not ready
-                        if (accessCodeCircle && acCodeDisplay) {
-                            showCode();
-                        } else {
-                            setTimeout(showCode, 100);
-                        }
+                        // Show immediately and retry multiple times to ensure visibility
+                        showCode();
+                        setTimeout(showCode, 50);
+                        setTimeout(showCode, 200);
+                        setTimeout(showCode, 500);
                     }
                     
                     // Clear only stale vote cache (not all localStorage)
@@ -513,9 +521,9 @@
                         localStorage.removeItem('votes_reset');
                     } catch (_) {}
                     
-                    // Small delay to ensure session is set, then redirect
-                    // Don't do excessive retries - trust the backend session setting
-                    await new Promise(resolve => setTimeout(resolve, 300));
+                    // CRITICAL: Give user time to see and copy their access code before redirect
+                    // Access code is vital - users need at least 5 seconds to see and save it
+                    await new Promise(resolve => setTimeout(resolve, 5000));
                     
                     // Redirect to Vote page
                     window.location.replace('../Vote/index.html');
@@ -651,28 +659,36 @@
                         try {
                             const codeUpper = data.user.access_code.toUpperCase().trim();
                             sessionStorage.setItem('user_access_code_fallback', codeUpper);
+                            console.log('Access code stored in sessionStorage:', codeUpper);
                         } catch (e) {
                             console.warn('Could not store access code in sessionStorage:', e);
                         }
-                        // Show access code - ensure DOM elements exist
+                        // Show access code - CRITICAL: Users must see this before redirect
                         const codeToShow = data.user.access_code;
                         const showCode = () => {
+                            // Always get fresh references to ensure elements exist
                             const circle = document.getElementById('accessCodeCircle');
                             const display = document.getElementById('acCodeDisplay');
                             if (circle && display) {
                                 display.textContent = codeToShow;
                                 circle.style.display = 'block';
+                                // Force visibility
+                                circle.style.visibility = 'visible';
+                                circle.style.opacity = '1';
+                                // Show popup immediately
                                 setTimeout(() => {
                                     circle.classList.add('show-popup');
-                                }, 500);
+                                }, 100);
+                                console.log('Access code displayed:', codeToShow);
+                            } else {
+                                console.error('Access code elements not found:', { circle: !!circle, display: !!display });
                             }
                         };
-                        // Try immediately, then retry if elements not ready
-                        if (accessCodeCircle && acCodeDisplay) {
-                            showCode();
-                        } else {
-                            setTimeout(showCode, 100);
-                        }
+                        // Show immediately and retry multiple times to ensure visibility
+                        showCode();
+                        setTimeout(showCode, 50);
+                        setTimeout(showCode, 200);
+                        setTimeout(showCode, 500);
                     }
                     
                     // Clear only stale vote cache (not all localStorage)
@@ -690,9 +706,9 @@
                         localStorage.removeItem('votes_reset');
                     } catch (_) {}
                     
-                    // Small delay to ensure session is set, then redirect
-                    // Don't do excessive retries - trust the backend session setting
-                    await new Promise(resolve => setTimeout(resolve, 300));
+                    // CRITICAL: Give user time to see and copy their access code before redirect
+                    // Access code is vital - users need at least 5 seconds to see and save it
+                    await new Promise(resolve => setTimeout(resolve, 5000));
                     
                     // Redirect to Vote page
                     window.location.replace('../Vote/index.html');

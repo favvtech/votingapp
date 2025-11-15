@@ -14,27 +14,38 @@
                     fallbackCode = fallbackCode.toUpperCase().trim();
                 }
             } catch (e) {
-                // sessionStorage not available, ignore
+                console.warn('Could not read sessionStorage:', e);
             }
             
             // Try with cookie first
-            let response = await fetch(`${API_BASE}/api/check-session`, {
-                method: 'GET',
-                credentials: 'include',
-                cache: 'no-store',
-                headers: {
-                    'Cache-Control': 'no-cache',
-                    'Pragma': 'no-cache'
-                }
-            });
-            
+            let response = null;
             let data = null;
-            if (response.ok) {
-                data = await response.json();
+            
+            try {
+                response = await fetch(`${API_BASE}/api/check-session`, {
+                    method: 'GET',
+                    credentials: 'include',
+                    cache: 'no-store',
+                    headers: {
+                        'Cache-Control': 'no-cache',
+                        'Pragma': 'no-cache'
+                    }
+                });
+                
+                if (response.ok) {
+                    try {
+                        data = await response.json();
+                    } catch (e) {
+                        console.warn('Failed to parse session check response:', e);
+                    }
+                }
+            } catch (e) {
+                console.warn('Cookie-based session check failed:', e);
             }
             
             // If session check fails, try with header fallback
             if ((!data || !data.logged_in || !data.user) && fallbackCode) {
+                console.log('Using header fallback authentication');
                 try {
                     response = await fetch(`${API_BASE}/api/check-session`, {
                         method: 'GET',
@@ -48,26 +59,61 @@
                     });
                     
                     if (response.ok) {
-                        data = await response.json();
-                        // If header fallback succeeded, wait a bit for session cookie to be set
-                        if (data && data.logged_in && data.user) {
-                            await new Promise(resolve => setTimeout(resolve, 200));
+                        try {
+                            data = await response.json();
+                            // If header fallback succeeded, wait for session cookie to be set
+                            if (data && data.logged_in && data.user) {
+                                console.log('Header fallback authentication successful');
+                                // Give more time for session cookie to be established
+                                await new Promise(resolve => setTimeout(resolve, 500));
+                                // Verify session is now working with cookies
+                                try {
+                                    const verifyResponse = await fetch(`${API_BASE}/api/check-session`, {
+                                        method: 'GET',
+                                        credentials: 'include',
+                                        cache: 'no-store',
+                                        headers: {
+                                            'Cache-Control': 'no-cache',
+                                            'Pragma': 'no-cache'
+                                        }
+                                    });
+                                    if (verifyResponse.ok) {
+                                        const verifyData = await verifyResponse.json();
+                                        if (verifyData && verifyData.logged_in && verifyData.user) {
+                                            console.log('Session cookie verified after header fallback');
+                                        }
+                                    }
+                                } catch (e) {
+                                    console.warn('Session verification failed:', e);
+                                }
+                            }
+                        } catch (e) {
+                            console.warn('Failed to parse header fallback response:', e);
                         }
+                    } else {
+                        console.warn('Header fallback request failed with status:', response.status);
                     }
                 } catch (e) {
                     console.warn('Header fallback check failed:', e);
                 }
             }
             
+            // Final check - only redirect if both cookie and header fallback failed
             if (!data || !data.logged_in || !data.user) {
+                console.warn('Authentication failed - both cookie and header fallback failed');
                 // Not authenticated - redirect to login
                 window.location.replace('../Auth/login.html');
                 return false;
             }
+            
+            console.log('Authentication successful');
             return true;
         } catch (error) {
-            console.error('Auth check failed:', error);
-            window.location.replace('../Auth/login.html');
+            console.error('Auth check failed with error:', error);
+            // Only redirect on critical errors, not on network issues
+            if (error.name !== 'TypeError' && !error.message.includes('fetch')) {
+                window.location.replace('../Auth/login.html');
+            }
             return false;
         }
     }
@@ -375,25 +421,47 @@
     let votingActive = true;
     let inactivityTimer = null;
     const INACTIVITY_TIMEOUT = 30 * 60 * 1000; // 30 minutes in milliseconds
+    let votingStatusCheckInterval = null;
+    let lastVoteClickTime = 0;
+    const VOTE_CLICK_COOLDOWN = 1000; // 1 second cooldown between vote clicks
 
     // Check voting status
-    async function checkVotingStatus() {
+    async function checkVotingStatus(immediate = false) {
         try {
-            const response = await fetch(`${API_BASE}/api/voting-status`, {
+            const response = await fetch(`${API_BASE}/api/voting-status?t=${Date.now()}`, {
                 method: 'GET',
                 credentials: 'include',
-                cache: 'no-store'
+                cache: 'no-store',
+                headers: {
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
+                }
             });
             const data = await response.json();
             if (data.success !== undefined) {
+                const wasActive = votingActive;
                 votingActive = data.voting_active;
+                
+                // Update UI immediately when status changes
                 if (!votingActive) {
                     showVotingClosedMessage();
                     disableAllVoteButtons();
                 } else {
-                    hideVotingClosedMessage();
-                    enableAllVoteButtons();
+                    // If voting just became active, hide message and enable buttons immediately
+                    if (!wasActive && votingActive) {
+                        hideVotingClosedMessage();
+                        enableAllVoteButtons();
+                    }
                 }
+                
+                // Adjust polling frequency based on status
+                if (votingStatusCheckInterval) {
+                    clearInterval(votingStatusCheckInterval);
+                }
+                // Poll more frequently when voting is disabled (every 5 seconds)
+                // Poll less frequently when voting is active (every 60 seconds)
+                const pollInterval = votingActive ? 60000 : 5000;
+                votingStatusCheckInterval = setInterval(() => checkVotingStatus(false), pollInterval);
             }
         } catch (error) {
             console.error('Error checking voting status:', error);
@@ -622,6 +690,14 @@
                 if (btn.getAttribute('data-locked') === 'true') return;
                 if (btn.hasAttribute('disabled')) return;
 
+                // Rate limiting: Prevent rapid clicks
+                const now = Date.now();
+                if (now - lastVoteClickTime < VOTE_CLICK_COOLDOWN) {
+                    console.log('Vote click cooldown active, ignoring rapid click');
+                    return;
+                }
+                lastVoteClickTime = now;
+
                 // nomineeIdForBackend is precomputed in the DOM to avoid any off-by-one issues
 
                 // Validate values before sending
@@ -631,11 +707,39 @@
                     return;
                 }
 
-                // Check voting status before submitting
-                if (!votingActive) {
-                    showVotingClosedMessage();
-                    alert('Voting session is closed.');
-                    return;
+                // CRITICAL: Check voting status immediately before submitting (fresh check)
+                // This prevents rapid-click bypasses
+                try {
+                    const statusResponse = await fetch(`${API_BASE}/api/voting-status?t=${Date.now()}`, {
+                        method: 'GET',
+                        credentials: 'include',
+                        cache: 'no-store',
+                        headers: {
+                            'Cache-Control': 'no-cache',
+                            'Pragma': 'no-cache'
+                        }
+                    });
+                    const statusData = await statusResponse.json();
+                    if (statusData.success !== undefined && !statusData.voting_active) {
+                        // Update local state
+                        votingActive = false;
+                        showVotingClosedMessage();
+                        disableAllVoteButtons();
+                        alert('Voting session is closed.');
+                        return;
+                    }
+                    // Update local state if voting is active
+                    if (statusData.success !== undefined && statusData.voting_active) {
+                        votingActive = true;
+                    }
+                } catch (e) {
+                    console.warn('Failed to check voting status before vote:', e);
+                    // If status check fails, still check local state
+                    if (!votingActive) {
+                        showVotingClosedMessage();
+                        alert('Voting session is closed.');
+                        return;
+                    }
                 }
 
                 try {
@@ -670,10 +774,14 @@
                         return;
                     }
                     if (resp.status === 403) {
-                        // Voting session closed
+                        // Voting session closed - update state immediately
                         const errorData = await resp.json().catch(() => ({}));
                         const message = errorData.message || 'Voting session is closed.';
+                        votingActive = false;
                         showVotingClosedMessage();
+                        disableAllVoteButtons();
+                        // Immediately check status again to sync
+                        checkVotingStatus(true);
                         alert(message);
                         return;
                     }
@@ -706,6 +814,10 @@
                     try {
                         localStorage.removeItem('vote_cache_timestamp');
                     } catch(_) {}
+                    
+                    // Immediately check voting status after successful vote
+                    // This ensures UI stays in sync if admin toggles during voting
+                    checkVotingStatus(true);
                     
                     // Ensure the category stays open after voting
                     const categoryCard = document.querySelector(`.category-card[data-category-id="${categoryId}"]`);
@@ -970,11 +1082,9 @@
         // Load user's existing votes to restore UI state
         await refreshMyVotes(true); // Force fresh fetch after authentication
         
-        // Check voting status
-        await checkVotingStatus();
-        // Check periodically (every 30 seconds)
-        // Check voting status every 60 seconds (reduced from 30 to save resources)
-        setInterval(checkVotingStatus, 60000);
+        // Check voting status immediately
+        await checkVotingStatus(true);
+        // Note: checkVotingStatus() now manages its own interval with dynamic polling
         
         // Initialize inactivity detection
         initInactivityDetection();

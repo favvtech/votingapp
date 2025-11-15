@@ -1067,18 +1067,38 @@
         
         async function loadVotingStatus() {
             try {
-                const response = await fetch(`${API_BASE}/api/admin/voting-status`, {
+                const headers = {
+                    ...getAdminHeaders(),
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
+                };
+                const response = await fetch(`${API_BASE}/api/admin/voting-status?t=${Date.now()}`, {
                     method: 'GET',
                     credentials: 'include',
-                    headers: getAdminHeaders(),
-                    cache: 'no-store'
+                    cache: 'no-store',
+                    headers
                 });
                 const data = await response.json();
                 if (data.success !== undefined && votingToggle) {
-                    // Update toggle state to match server
-                    votingToggle.checked = data.voting_active;
+                    // Only update if state actually changed to prevent flickering
+                    const currentState = votingToggle.checked;
+                    const serverState = data.voting_active;
+                    
+                    if (currentState !== serverState) {
+                        // Temporarily remove event listener to prevent recursive calls
+                        if (handleToggleChange) {
+                            votingToggle.removeEventListener('change', handleToggleChange);
+                        }
+                        votingToggle.checked = serverState;
+                        // Re-add listener after a short delay
+                        setTimeout(() => {
+                            if (handleToggleChange) {
+                                votingToggle.addEventListener('change', handleToggleChange);
+                            }
+                        }, 100);
+                    }
                     if (votingLabel) {
-                        votingLabel.textContent = data.voting_active ? 'ON' : 'OFF';
+                        votingLabel.textContent = serverState ? 'ON' : 'OFF';
                     }
                 }
             } catch (error) {
@@ -1092,28 +1112,39 @@
                     method: 'POST',
                     credentials: 'include',
                     headers: getAdminHeaders(),
-                    body: JSON.stringify({ voting_active: active })
+                    body: JSON.stringify({ voting_active: active }),
+                    cache: 'no-store'
                 });
                 const data = await response.json();
                 if (data.success) {
-                    // Immediately update toggle state
+                    // Immediately update toggle state to prevent flickering
                     if (votingToggle) {
+                        // Temporarily remove event listener to prevent recursive calls
+                        votingToggle.removeEventListener('change', handleToggleChange);
                         votingToggle.checked = active;
+                        // Re-add listener after a short delay
+                        setTimeout(() => {
+                            votingToggle.addEventListener('change', handleToggleChange);
+                        }, 100);
                     }
                     if (votingLabel) {
                         votingLabel.textContent = active ? 'ON' : 'OFF';
                     }
                     showToast(data.message || `Voting session ${active ? 'activated' : 'deactivated'}`, 'success');
                     
-                    // Reload status to ensure consistency
+                    // Verify status after a short delay (don't reload immediately to prevent flickering)
                     setTimeout(() => {
                         loadVotingStatus();
-                    }, 500);
+                    }, 1000);
                 } else {
                     showToast(data.message || 'Failed to update voting status', 'error');
                     // Revert toggle
                     if (votingToggle) {
+                        votingToggle.removeEventListener('change', handleToggleChange);
                         votingToggle.checked = !active;
+                        setTimeout(() => {
+                            votingToggle.addEventListener('change', handleToggleChange);
+                        }, 100);
                     }
                     // Reload status
                     loadVotingStatus();
@@ -1123,12 +1154,19 @@
                 showToast('Failed to update voting status', 'error');
                 // Revert toggle
                 if (votingToggle) {
+                    votingToggle.removeEventListener('change', handleToggleChange);
                     votingToggle.checked = !active;
+                    setTimeout(() => {
+                        votingToggle.addEventListener('change', handleToggleChange);
+                    }, 100);
                 }
                 // Reload status
                 loadVotingStatus();
             }
         }
+        
+        // Store toggle change handler for removal/re-addition
+        let handleToggleChange = null;
         
         if (votingToggle) {
             // Load initial status
@@ -1270,13 +1308,14 @@
             }
             
             // Update on toggle - show auth modal first
-            votingToggle.addEventListener('change', (e) => {
+            handleToggleChange = (e) => {
                 const newState = e.target.checked;
                 // Prevent immediate toggle, show modal first
                 e.preventDefault();
                 votingToggle.checked = !newState; // Revert immediately
                 showAuthModal(newState);
-            });
+            };
+            votingToggle.addEventListener('change', handleToggleChange);
             
             // Handle access code input - auto uppercase (works for both text and password types)
             if (accessCodeInput) {
@@ -1322,7 +1361,9 @@
             
             // Refresh status periodically
             // Load voting status every 60 seconds (reduced from 30 to save resources)
-            setInterval(loadVotingStatus, 60000);
+            // Poll voting status every 30 seconds (reduced from 60 to keep UI in sync)
+            // This prevents toggle flickering while still maintaining reasonable polling frequency
+            setInterval(loadVotingStatus, 30000);
         }
         
         // Reset all votes

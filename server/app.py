@@ -754,10 +754,12 @@ def create_app() -> Flask:
     @app.post("/api/vote")
     def cast_vote():
         """Cast a vote for a nominee in a category; one vote per user per category"""
-        # Check if voting session is active
+        # CRITICAL: Check voting status FIRST before any other processing
+        # This prevents any race conditions or rapid-click bypasses
         if not app.config.get('VOTING_ACTIVE', True):
             return jsonify({"success": False, "message": "Voting session is closed."}), 403
         
+        # Authenticate user
         user_id = authenticate_request_helper()
         if not user_id:
             return jsonify({"success": False, "message": "Not authenticated"}), 401
