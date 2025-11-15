@@ -1906,7 +1906,7 @@ def create_app() -> Flask:
 
     @app.delete("/api/admin/users/<int:user_id>")
     def admin_delete_user(user_id):
-        """Delete a user and all their votes (admin only)"""
+        """Delete a user and all their votes, sessions, and states (admin only)"""
         if not require_admin():
             return jsonify({"success": False, "message": "Admin access required"}), 403
         
@@ -1914,26 +1914,38 @@ def create_app() -> Flask:
         try:
             if use_postgresql:
                 # Use SQLAlchemy for PostgreSQL
-                from models import db, User, Vote
-                # Delete user's votes first
+                from models import db, User, Vote, Session, UserState
+                # Delete in correct order to avoid foreign key violations:
+                # 1. Delete user's sessions first (references user_id)
+                Session.query.filter_by(user_id=user_id).delete()
+                # 2. Delete user's states (references user_id)
+                UserState.query.filter_by(user_id=user_id).delete()
+                # 3. Delete user's votes (references user_id)
                 Vote.query.filter_by(user_id=user_id).delete()
-                # Delete user
+                # 4. Finally delete the user
                 User.query.filter_by(id=user_id).delete()
                 db.session.commit()
-                logger.info(f"✅ Deleted user {user_id} and their votes from PostgreSQL")
+                logger.info(f"✅ Deleted user {user_id} and all related data from PostgreSQL")
                 return jsonify({"success": True, "message": "User deleted successfully"})
             else:
                 # Use SQLite
                 conn = get_db()
                 cursor = conn.cursor()
-                # Delete user's votes first
-                cursor.execute("DELETE FROM votes WHERE user_id = ?", (user_id,))
-                # Delete user
-                cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
-                conn.commit()
-                conn.close()
-                logger.info(f"✅ Deleted user {user_id} and their votes from SQLite")
-                return jsonify({"success": True, "message": "User deleted successfully"})
+                try:
+                    # Delete in correct order to avoid foreign key violations:
+                    # 1. Delete user's sessions first (references user_id)
+                    cursor.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+                    # 2. Delete user's states (references user_id)
+                    cursor.execute("DELETE FROM user_states WHERE user_id = ?", (user_id,))
+                    # 3. Delete user's votes (references user_id)
+                    cursor.execute("DELETE FROM votes WHERE user_id = ?", (user_id,))
+                    # 4. Finally delete the user
+                    cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
+                    conn.commit()
+                    logger.info(f"✅ Deleted user {user_id} and all related data from SQLite")
+                    return jsonify({"success": True, "message": "User deleted successfully"})
+                finally:
+                    conn.close()
         except Exception as e:
             logger.error(f"❌ Error deleting user: {e}", exc_info=True)
             if use_postgresql:

@@ -476,39 +476,37 @@
                             sessionStorage.setItem('user_access_code_fallback', codeUpper);
                             // Also store as token in localStorage for compatibility
                             localStorage.setItem('token', codeUpper);
-                            console.log('Access code stored in sessionStorage:', codeUpper);
+                            console.log('Access code stored:', codeUpper);
                         } catch (e) {
-                            console.warn('Could not store access code in sessionStorage:', e);
+                            console.warn('Could not store access code:', e);
                         }
-                        // Show access code - CRITICAL: Users must see this before redirect
+                    }
+                    
+                    // ALWAYS fetch access code from server to ensure it displays
+                    // Wait a bit for session to be fully established
+                    await new Promise(resolve => setTimeout(resolve, 300));
+                    const loaded = await loadAccessCode();
+                    
+                    // If server fetch failed but we have it in response, show it directly
+                    if (!loaded && data.user && data.user.access_code) {
                         const codeToShow = data.user.access_code;
                         const showCode = () => {
-                            // Always get fresh references to ensure elements exist
                             const circle = document.getElementById('accessCodeCircle');
                             const display = document.getElementById('acCodeDisplay');
                             if (circle && display) {
                                 display.textContent = codeToShow;
                                 circle.style.display = 'block';
-                                // Force visibility
                                 circle.style.visibility = 'visible';
                                 circle.style.opacity = '1';
-                                // Show popup immediately
                                 setTimeout(() => {
                                     circle.classList.add('show-popup');
                                 }, 100);
-                                console.log('Access code displayed:', codeToShow);
-                            } else {
-                                console.error('Access code elements not found:', { circle: !!circle, display: !!display });
+                                console.log('Access code displayed from response:', codeToShow);
                             }
                         };
-                        // Show immediately and retry multiple times to ensure visibility
                         showCode();
-                        setTimeout(showCode, 50);
                         setTimeout(showCode, 200);
                         setTimeout(showCode, 500);
-                    } else {
-                        // Fallback: fetch access code from server
-                        loadAccessCode();
                     }
                     
                     // Clear only stale vote cache (not all localStorage)
@@ -666,39 +664,37 @@
                             sessionStorage.setItem('user_access_code_fallback', codeUpper);
                             // Also store as token in localStorage for compatibility
                             localStorage.setItem('token', codeUpper);
-                            console.log('Access code stored in sessionStorage:', codeUpper);
+                            console.log('Access code stored:', codeUpper);
                         } catch (e) {
-                            console.warn('Could not store access code in sessionStorage:', e);
+                            console.warn('Could not store access code:', e);
                         }
-                        // Show access code - CRITICAL: Users must see this before redirect
+                    }
+                    
+                    // ALWAYS fetch access code from server to ensure it displays
+                    // Wait a bit for session to be fully established
+                    await new Promise(resolve => setTimeout(resolve, 300));
+                    const loaded = await loadAccessCode();
+                    
+                    // If server fetch failed but we have it in response, show it directly
+                    if (!loaded && data.user && data.user.access_code) {
                         const codeToShow = data.user.access_code;
                         const showCode = () => {
-                            // Always get fresh references to ensure elements exist
                             const circle = document.getElementById('accessCodeCircle');
                             const display = document.getElementById('acCodeDisplay');
                             if (circle && display) {
                                 display.textContent = codeToShow;
                                 circle.style.display = 'block';
-                                // Force visibility
                                 circle.style.visibility = 'visible';
                                 circle.style.opacity = '1';
-                                // Show popup immediately
                                 setTimeout(() => {
                                     circle.classList.add('show-popup');
                                 }, 100);
-                                console.log('Access code displayed:', codeToShow);
-                            } else {
-                                console.error('Access code elements not found:', { circle: !!circle, display: !!display });
+                                console.log('Access code displayed from response:', codeToShow);
                             }
                         };
-                        // Show immediately and retry multiple times to ensure visibility
                         showCode();
-                        setTimeout(showCode, 50);
                         setTimeout(showCode, 200);
                         setTimeout(showCode, 500);
-                    } else {
-                        // Fallback: fetch access code from server
-                        loadAccessCode();
                     }
                     
                     // Clear only stale vote cache (not all localStorage)
@@ -751,47 +747,17 @@
         });
     }
 
-    // Load access code from server
-    async function loadAccessCode() {
+    // Load access code from server - ALWAYS use session cookie (most reliable)
+    async function loadAccessCode(retryCount = 0) {
         try {
-            // Try to get token from localStorage (stored access code)
-            const token = localStorage.getItem("token") || sessionStorage.getItem("user_access_code_fallback");
+            const maxRetries = 3;
+            const retryDelays = [500, 1000, 2000]; // Progressive delays
             
-            if (!token) {
-                // Try with session cookie
-                const response = await fetch(`${API_BASE}/get_access_code`, {
-                    method: "GET",
-                    credentials: 'include',
-                    headers: {
-                        'Cache-Control': 'no-cache',
-                        'Pragma': 'no-cache'
-                    }
-                });
-                
-                if (response.ok) {
-                    const data = await response.json();
-                    if (data.access_code) {
-                        const circle = document.getElementById('accessCodeCircle');
-                        const display = document.getElementById('acCodeDisplay');
-                        if (circle && display) {
-                            display.textContent = data.access_code;
-                            circle.style.display = 'block';
-                            circle.style.visibility = 'visible';
-                            circle.style.opacity = '1';
-                            setTimeout(() => {
-                                circle.classList.add('show-popup');
-                            }, 100);
-                        }
-                    }
-                }
-                return;
-            }
-
+            // Always try with session cookie first (most reliable)
             const response = await fetch(`${API_BASE}/get_access_code`, {
                 method: "GET",
                 credentials: 'include',
                 headers: {
-                    "Authorization": "Bearer " + token,
                     'Cache-Control': 'no-cache',
                     'Pragma': 'no-cache'
                 }
@@ -810,14 +776,31 @@
                         setTimeout(() => {
                             circle.classList.add('show-popup');
                         }, 100);
+                        console.log('Access code loaded and displayed:', data.access_code);
+                        return true; // Success
+                    } else {
+                        console.warn('Access code elements not found');
                     }
                 } else {
-                    console.log("Access code missing:", data);
+                    console.log("Access code missing from response:", data);
                 }
+            } else if (response.status === 401 && retryCount < maxRetries) {
+                // Session might not be established yet, retry with delay
+                console.log(`Session not ready, retrying in ${retryDelays[retryCount]}ms... (attempt ${retryCount + 1}/${maxRetries})`);
+                await new Promise(resolve => setTimeout(resolve, retryDelays[retryCount]));
+                return await loadAccessCode(retryCount + 1);
+            } else {
+                console.warn('Failed to load access code:', response.status, response.statusText);
             }
         } catch (error) {
             console.error("Error loading access code:", error);
+            // Retry on network errors
+            if (retryCount < 2) {
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                return await loadAccessCode(retryCount + 1);
+            }
         }
+        return false;
     }
 
     // Check if user is already logged in

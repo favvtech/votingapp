@@ -4,76 +4,81 @@
     let categoriesData = [];
     
     // Validate session before allowing access to voting page
+    // PRIORITIZES session cookies (most reliable) over tokens
     async function checkSessionBeforeVoting() {
         try {
-            // Try to get token from localStorage (stored access code)
-            const token = localStorage.getItem("token") || sessionStorage.getItem("user_access_code_fallback");
-            
-            if (!token) {
-                // Try with session cookie first
-                const sessionResponse = await fetch(`${API_BASE}/validate_session`, {
-                    method: "GET",
-                    credentials: 'include',
-                    headers: {
-                        'Cache-Control': 'no-cache',
-                        'Pragma': 'no-cache'
-                    }
-                });
-                
-                if (sessionResponse.ok) {
-                    const sessionData = await sessionResponse.json();
-                    if (sessionData.valid) {
-                        return true; // Session is valid
-                    }
-                }
-                
-                // No token and no valid session - redirect to login
-                window.location.href = "../Auth/login.html";
-                return false;
-            }
-
-            const response = await fetch(`${API_BASE}/validate_session`, {
+            // ALWAYS try session cookie first (most reliable)
+            const sessionResponse = await fetch(`${API_BASE}/validate_session`, {
                 method: "GET",
                 credentials: 'include',
                 headers: {
-                    "Authorization": "Bearer " + token,
                     'Cache-Control': 'no-cache',
                     'Pragma': 'no-cache'
                 }
             });
-
-            if (response.ok) {
-                const data = await response.json();
-                if (!data.valid) {
-                    localStorage.removeItem("token");
-                    sessionStorage.removeItem("user_access_code_fallback");
-                    window.location.href = "../Auth/login.html";
-                    return false;
+            
+            if (sessionResponse.ok) {
+                const sessionData = await sessionResponse.json();
+                if (sessionData.valid) {
+                    return true; // Session is valid - allow access
                 }
-                return true; // Session is valid
-            } else {
-                // If validation fails, try with session cookie as fallback
-                const sessionResponse = await fetch(`${API_BASE}/validate_session`, {
-                    method: "GET",
-                    credentials: 'include',
-                    headers: {
-                        'Cache-Control': 'no-cache',
-                        'Pragma': 'no-cache'
+            }
+            
+            // If session cookie fails, try with token as fallback
+            const token = localStorage.getItem("token") || sessionStorage.getItem("user_access_code_fallback");
+            if (token) {
+                try {
+                    const tokenResponse = await fetch(`${API_BASE}/validate_session`, {
+                        method: "GET",
+                        credentials: 'include',
+                        headers: {
+                            "Authorization": "Bearer " + token,
+                            'Cache-Control': 'no-cache',
+                            'Pragma': 'no-cache'
+                        }
+                    });
+                    
+                    if (tokenResponse.ok) {
+                        const tokenData = await tokenResponse.json();
+                        if (tokenData.valid) {
+                            return true; // Token validation successful
+                        }
                     }
-                });
-                
-                if (sessionResponse.ok) {
-                    const sessionData = await sessionResponse.json();
-                    if (sessionData.valid) {
-                        return true; // Session is valid
-                    }
+                } catch (tokenError) {
+                    console.warn("Token validation error:", tokenError);
+                    // Continue to check if session cookie works
                 }
-                
+            }
+            
+            // Both session cookie and token failed - check response status
+            // Only redirect if we got a clear "not valid" response (401), not on network errors
+            if (sessionResponse.status === 401) {
+                // Clear invalid tokens
                 localStorage.removeItem("token");
                 sessionStorage.removeItem("user_access_code_fallback");
                 window.location.href = "../Auth/login.html";
                 return false;
             }
+            
+            // If we got a response but it's not valid, also redirect
+            if (sessionResponse.ok) {
+                try {
+                    const responseData = await sessionResponse.json();
+                    if (responseData && responseData.valid === false) {
+                        localStorage.removeItem("token");
+                        sessionStorage.removeItem("user_access_code_fallback");
+                        window.location.href = "../Auth/login.html";
+                        return false;
+                    }
+                } catch (e) {
+                    // Couldn't parse response - might be network error, don't redirect
+                    console.warn("Could not parse session validation response:", e);
+                }
+            }
+            
+            // Network error or other issue - don't redirect, let existing auth check handle it
+            console.warn("Session validation unclear, letting existing auth check handle it");
+            return null;
         } catch (error) {
             console.error("Session validation error:", error);
             // On network error, don't redirect - let the existing auth check handle it
