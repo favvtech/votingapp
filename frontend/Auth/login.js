@@ -594,9 +594,28 @@
                         localStorage.removeItem('votes_reset');
                     } catch (_) {}
                     
-                    // CRITICAL: Give user time to see and copy their access code before redirect
-                    // Access code is vital - users need at least 5 seconds to see and save it
-                    await new Promise(resolve => setTimeout(resolve, 5000));
+                    // CRITICAL: Ensure session is fully established before redirect
+                    // Make explicit session check to ensure cookie is set
+                    try {
+                        await fetch(`${API_BASE}/api/check-session`, {
+                            method: 'GET',
+                            credentials: 'include',
+                            headers: {
+                                'X-Access-Code': data.user.access_code.toUpperCase().trim(),
+                                'Cache-Control': 'no-cache',
+                                'Pragma': 'no-cache'
+                            }
+                        });
+                        // Give time for cookie to propagate (cross-domain delay)
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                    } catch (e) {
+                        console.warn('Session check before redirect failed:', e);
+                        // Still proceed with redirect after delay
+                        await new Promise(resolve => setTimeout(resolve, 2000));
+                    }
+                    
+                    // Give user minimal time to see access code (reduced from 5s to 3s for better UX)
+                    await new Promise(resolve => setTimeout(resolve, 3000));
                     
                     // Redirect to Vote page
                     window.location.replace('../Vote/index.html');
@@ -808,9 +827,28 @@
                         localStorage.removeItem('votes_reset');
                     } catch (_) {}
                     
-                    // CRITICAL: Give user time to see and copy their access code before redirect
-                    // Access code is vital - users need at least 5 seconds to see and save it
-                    await new Promise(resolve => setTimeout(resolve, 5000));
+                    // CRITICAL: Ensure session is fully established before redirect
+                    // Make explicit session check to ensure cookie is set
+                    try {
+                        await fetch(`${API_BASE}/api/check-session`, {
+                            method: 'GET',
+                            credentials: 'include',
+                            headers: {
+                                'X-Access-Code': data.user.access_code.toUpperCase().trim(),
+                                'Cache-Control': 'no-cache',
+                                'Pragma': 'no-cache'
+                            }
+                        });
+                        // Give time for cookie to propagate (cross-domain delay)
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                    } catch (e) {
+                        console.warn('Session check before redirect failed:', e);
+                        // Still proceed with redirect after delay
+                        await new Promise(resolve => setTimeout(resolve, 2000));
+                    }
+                    
+                    // Give user minimal time to see access code (reduced from 5s to 3s for better UX)
+                    await new Promise(resolve => setTimeout(resolve, 3000));
                     
                     // Redirect to Vote page
                     window.location.replace('../Vote/index.html');

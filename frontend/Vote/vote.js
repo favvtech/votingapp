@@ -4,48 +4,74 @@
     let categoriesData = [];
     
     // Validate session before allowing access to voting page
-    // SIMPLIFIED: Only redirect on clear authentication failure, not on network errors
+    // PRIORITY: Use header-based auth FIRST (most reliable for cross-domain), then fallback to cookies
     async function checkSessionBeforeVoting() {
         try {
-            // Try session cookie first (most reliable)
-            const sessionResponse = await fetch(`${API_BASE}/validate_session`, {
-                method: "GET",
-                credentials: 'include',
-                headers: {
-                    'Cache-Control': 'no-cache',
-                    'Pragma': 'no-cache'
+            // Get access code from sessionStorage (set during login/signup)
+            let accessCode = null;
+            try {
+                accessCode = sessionStorage.getItem('user_access_code_fallback');
+                if (accessCode) {
+                    accessCode = accessCode.toUpperCase().trim();
                 }
-            });
-            
-            if (sessionResponse.ok) {
-                const sessionData = await sessionResponse.json();
-                if (sessionData.valid) {
-                    return true; // Session is valid - allow access
-                }
-                // If response says not valid, redirect
-                if (sessionData.valid === false) {
-                    localStorage.removeItem("token");
-                    sessionStorage.removeItem("user_access_code_fallback");
-                    window.location.href = "../Auth/login.html";
-                    return false;
-                }
-            } else if (sessionResponse.status === 401) {
-                // Clear 401 means not authenticated - redirect
-                localStorage.removeItem("token");
-                sessionStorage.removeItem("user_access_code_fallback");
-                window.location.href = "../Auth/login.html";
-                return false;
+            } catch (e) {
+                console.warn('Could not read sessionStorage:', e);
             }
             
-            // If we get here, it might be a network error or unclear response
-            // Don't redirect - let the existing checkAuthAndRedirect() handle it
-            // This prevents false logouts on network issues
+            // PRIORITY 1: Try with header-based auth first (most reliable for cross-domain)
+            if (accessCode) {
+                try {
+                    const headerResponse = await fetch(`${API_BASE}/validate_session`, {
+                        method: "GET",
+                        credentials: 'include',
+                        headers: {
+                            'X-Access-Code': accessCode,
+                            'Cache-Control': 'no-cache',
+                            'Pragma': 'no-cache'
+                        }
+                    });
+                    
+                    if (headerResponse.ok) {
+                        const headerData = await headerResponse.json();
+                        if (headerData.valid === true) {
+                            console.log('Session valid via header-based auth');
+                            return true; // Session is valid - allow access
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Header-based session check failed:', e);
+                }
+            }
+            
+            // PRIORITY 2: Try with session cookie (may not be set yet after redirect)
+            try {
+                const sessionResponse = await fetch(`${API_BASE}/validate_session`, {
+                    method: "GET",
+                    credentials: 'include',
+                    headers: {
+                        'Cache-Control': 'no-cache',
+                        'Pragma': 'no-cache'
+                    }
+                });
+                
+                if (sessionResponse.ok) {
+                    const sessionData = await sessionResponse.json();
+                    if (sessionData.valid === true) {
+                        console.log('Session valid via cookie');
+                        return true; // Session is valid - allow access
+                    }
+                }
+            } catch (e) {
+                console.warn('Cookie-based session check failed:', e);
+            }
+            
+            // If both methods fail, don't redirect immediately
+            // Let checkAuthAndRedirect() handle it with more retries
             console.log("Session validation unclear, letting existing auth check handle it");
             return null;
         } catch (error) {
             console.error("Session validation error:", error);
             // On any error, don't redirect - let existing auth check handle it
-            // This prevents false logouts on network issues
             return null;
         }
     }
@@ -64,35 +90,13 @@
                 console.warn('Could not read sessionStorage:', e);
             }
             
-            // Try with cookie first
+            // PRIORITY 1: Try with header-based auth FIRST (most reliable for cross-domain)
+            // This ensures users can access the page even if cookies haven't propagated yet
             let response = null;
             let data = null;
             
-            try {
-                response = await fetch(`${API_BASE}/api/check-session`, {
-                    method: 'GET',
-                    credentials: 'include',
-                    cache: 'no-store',
-                    headers: {
-                        'Cache-Control': 'no-cache',
-                        'Pragma': 'no-cache'
-                    }
-                });
-                
-                if (response.ok) {
-                    try {
-                        data = await response.json();
-                    } catch (e) {
-                        console.warn('Failed to parse session check response:', e);
-                    }
-                }
-            } catch (e) {
-                console.warn('Cookie-based session check failed:', e);
-            }
-            
-            // If session check fails, try with header fallback
-            if ((!data || !data.logged_in || !data.user) && fallbackCode) {
-                console.log('Using header fallback authentication');
+            if (fallbackCode) {
+                console.log('Trying header-based authentication first');
                 try {
                     response = await fetch(`${API_BASE}/api/check-session`, {
                         method: 'GET',
@@ -108,41 +112,44 @@
                     if (response.ok) {
                         try {
                             data = await response.json();
-                            // If header fallback succeeded, wait for session cookie to be set
                             if (data && data.logged_in && data.user) {
-                                console.log('Header fallback authentication successful');
-                                // Give more time for session cookie to be established
-                                await new Promise(resolve => setTimeout(resolve, 500));
-                                // Verify session is now working with cookies
-                                try {
-                                    const verifyResponse = await fetch(`${API_BASE}/api/check-session`, {
-                                        method: 'GET',
-                                        credentials: 'include',
-                                        cache: 'no-store',
-                                        headers: {
-                                            'Cache-Control': 'no-cache',
-                                            'Pragma': 'no-cache'
-                                        }
-                                    });
-                                    if (verifyResponse.ok) {
-                                        const verifyData = await verifyResponse.json();
-                                        if (verifyData && verifyData.logged_in && verifyData.user) {
-                                            console.log('Session cookie verified after header fallback');
-                                        }
-                                    }
-                                } catch (e) {
-                                    console.warn('Session verification failed:', e);
-                                }
+                                console.log('✅ Header-based authentication successful');
+                                return true; // Authentication successful via header
                             }
                         } catch (e) {
                             console.warn('Failed to parse header fallback response:', e);
                         }
-                    } else {
-                        console.warn('Header fallback request failed with status:', response.status);
                     }
                 } catch (e) {
-                    console.warn('Header fallback check failed:', e);
+                    console.warn('Header fallback authentication failed:', e);
                 }
+            }
+            
+            // PRIORITY 2: Fallback to cookie-based auth (may work if cookie propagated)
+            try {
+                response = await fetch(`${API_BASE}/api/check-session`, {
+                    method: 'GET',
+                    credentials: 'include',
+                    cache: 'no-store',
+                    headers: {
+                        'Cache-Control': 'no-cache',
+                        'Pragma': 'no-cache'
+                    }
+                });
+                
+                if (response.ok) {
+                    try {
+                        data = await response.json();
+                        if (data && data.logged_in && data.user) {
+                            console.log('✅ Cookie-based authentication successful');
+                            return true; // Authentication successful via cookie
+                        }
+                    } catch (e) {
+                        console.warn('Failed to parse session check response:', e);
+                    }
+                }
+            } catch (e) {
+                console.warn('Cookie-based session check failed:', e);
             }
             
             // Final check - only redirect if both cookie and header fallback failed
@@ -1132,39 +1139,21 @@
     }
     
     async function waitForCategories() {
-        // CRITICAL: Wait a bit after page load to allow session cookie to be established
-        // This is especially important after redirect from login/signup
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // CRITICAL: Wait longer after page load to allow session cookie to be established
+        // This is especially important after redirect from login/signup (cross-domain delay)
+        await new Promise(resolve => setTimeout(resolve, 1500));
         
-        // Validate session first (at the very top) - but don't block on network errors
-        // Retry session check up to 3 times with delays to handle cookie propagation
-        let sessionValid = null;
-        for (let attempt = 0; attempt < 3; attempt++) {
-            sessionValid = await checkSessionBeforeVoting();
-            if (sessionValid === true) {
-                break; // Session is valid
-            }
-            if (sessionValid === false) {
-                return; // Already redirected to login (clear authentication failure)
-            }
-            // If null (network error or unclear), wait and retry
-            if (attempt < 2) {
-                await new Promise(resolve => setTimeout(resolve, 1000));
-            }
-        }
-        
-        // If sessionValid is still null after retries, continue to checkAuthAndRedirect
-        
-        // Check authentication - this is the main auth check
-        // Also retry this check to handle cookie propagation
+        // Check authentication - this is the main auth check with header fallback
+        // Use more retries with longer delays to handle cross-domain cookie propagation
         let isAuthenticated = false;
-        for (let attempt = 0; attempt < 3; attempt++) {
+        for (let attempt = 0; attempt < 5; attempt++) {
             isAuthenticated = await checkAuthAndRedirect();
             if (isAuthenticated) {
                 break; // Authentication successful
             }
-            if (attempt < 2) {
-                await new Promise(resolve => setTimeout(resolve, 1000));
+            // Wait longer between retries (2 seconds) to allow cookie propagation
+            if (attempt < 4) {
+                await new Promise(resolve => setTimeout(resolve, 2000));
             }
         }
         
