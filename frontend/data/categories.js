@@ -2,7 +2,7 @@
 window.CATEGORIES = [
   {
     number: 1,
-    title: "PEACEMAKER AWARDS",
+    title: "PEACEMAKER AWARD",
     nominees: [
       "Momoh Precious",
       "Victor Nweze",
@@ -58,7 +58,7 @@ window.CATEGORIES = [
   },
   {
     number: 5,
-    title: "MUSICAL VOICE AWARDS",
+    title: "MUSICAL VOICE AWARD",
     nominees: [
       "Bukola Ajisafe",
       "Adeniran Hallelujah",

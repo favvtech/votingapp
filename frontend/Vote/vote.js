@@ -207,6 +207,7 @@
             'akinwunmi-taiwo',
             'ayepe-vanessa',
             'balogun-oluwatosin',
+            'bamidele-michael',
             'blessing-obaji',
             'bukola-ajisafe',
             'bunmi-ogundapo',
@@ -254,6 +255,11 @@
 
         const normalizedName = normalizeNameForMatching(nomineeName);
         let matchedFilename = null;
+        const imageExtensionOverrides = {
+            'abraham-ikpe': 'jpeg',
+            'adebowale-michael': 'jpeg',
+            'bamidele-michael': 'jpeg'
+        };
         
         // Special name mappings for variations
         const specialMappings = {
@@ -262,7 +268,7 @@
             'adebowale-micheal': 'adebowale-michael', // Fixed spelling
             'adebowale-michael': 'adebowale-michael',
             'abraham-ikpe': 'abraham-ikpe',
-            'bamidele-michael': null, // No image - will use placeholder
+            'bamidele-michael': 'bamidele-michael',
             'olubisi-olamilekan': 'olasunkanmi-olamilekan',
             'elisha-okon-maurice': 'elisha-maurice',
             'musa-dauda-marvelous': 'marvelous-musa',
@@ -351,8 +357,8 @@
         }
         
         if (matchedFilename) {
-            // Return jpg path (all images in category1 are .jpg based on file listing)
-            return `../images/category1/${matchedFilename}.jpg`;
+            const extension = imageExtensionOverrides[matchedFilename] || 'jpg';
+            return `../images/category1/${matchedFilename}.${extension}`;
         }
         
         return null;
