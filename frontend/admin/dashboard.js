@@ -173,7 +173,6 @@
                 const targetPageEl = document.getElementById(`page-${targetPage}`);
                 if (targetPageEl) {
                     targetPageEl.style.display = 'block';
-                    
                 }
                 
                 // Close sidebar on mobile
@@ -1712,6 +1711,8 @@
                             // Re-initialize phone mask after reset
                             attachPhoneMaskNigeria('registrationPhone');
                         }
+                        // Refresh registered users list
+                        await loadRegisteredUsersList();
                     } else {
                         showToast(data.message || 'Failed to add registration record', 'error');
                     }
@@ -1827,6 +1828,8 @@
                         if (typeof loadUsers === 'function') {
                             await loadUsers();
                         }
+                        // Refresh registered users list
+                        await loadRegisteredUsersList();
                     } else {
                         showToast(data.message || 'Failed to delete registration record', 'error');
                     }
@@ -1860,6 +1863,139 @@
                     deleteRegistrationConfirmModal.style.display = 'none';
                 }
             });
+        }
+
+        // Registered Users List functionality
+        let registeredUsersRefreshInterval = null;
+
+        async function loadRegisteredUsersList() {
+            const tbody = document.getElementById('registeredUsersTableBody');
+            const summaryEl = document.getElementById('registeredUsersSummary');
+            
+            if (!tbody) return;
+
+            try {
+                tbody.innerHTML = '<tr><td colspan="5" class="loading">Loading registered users...</td></tr>';
+                
+                const response = await fetch(`${API_BASE}/api/admin/registered-users`, {
+                    method: 'GET',
+                    headers: getAdminHeaders(),
+                    credentials: 'include'
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+                
+                if (!data.success) {
+                    throw new Error(data.message || 'Failed to load registered users');
+                }
+
+                const users = data.users || [];
+                const total = data.total || 0;
+                const withAccounts = data.with_accounts || 0;
+                const withoutAccounts = data.without_accounts || 0;
+
+                // Update summary
+                if (summaryEl) {
+                    summaryEl.textContent = `Total: ${total} | Users: ${withAccounts} | Registered: ${withoutAccounts}`;
+                }
+
+                // Render table
+                if (users.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 40px; color: var(--text-muted);">No registered users found</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = users.map((user, index) => {
+                    const statusClass = user.has_account ? 'status-badge-user' : 'status-badge-registered';
+                    const statusText = user.status || (user.has_account ? 'User' : 'Registered');
+                    
+                    return `
+                        <tr>
+                            <td class="row-number-cell">
+                                <span class="row-number">${index + 1}</span>
+                            </td>
+                            <td>${escapeHtml(user.first_name || '')}</td>
+                            <td>${escapeHtml(user.last_name || '')}</td>
+                            <td>${escapeHtml(user.phone || '')}</td>
+                            <td>
+                                <span class="status-badge ${statusClass}">${escapeHtml(statusText)}</span>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+
+            } catch (error) {
+                console.error('Error loading registered users:', error);
+                tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; padding: 40px; color: var(--error);">Failed to load registered users. Please try again.</td></tr>`;
+                if (summaryEl) {
+                    summaryEl.textContent = 'Error loading data';
+                }
+            }
+        }
+
+        // Refresh button handler
+        const refreshRegisteredUsersBtn = document.getElementById('refreshRegisteredUsersBtn');
+        if (refreshRegisteredUsersBtn) {
+            refreshRegisteredUsersBtn.addEventListener('click', async () => {
+                await loadRegisteredUsersList();
+            });
+        }
+
+        // Auto-refresh when on registration page
+        function startRegisteredUsersAutoRefresh() {
+            // Clear existing interval
+            if (registeredUsersRefreshInterval) {
+                clearInterval(registeredUsersRefreshInterval);
+            }
+            
+            // Load immediately
+            loadRegisteredUsersList();
+            
+            // Set up auto-refresh every 5 seconds
+            registeredUsersRefreshInterval = setInterval(() => {
+                const registrationPage = document.getElementById('page-registration');
+                if (registrationPage && registrationPage.style.display !== 'none') {
+                    loadRegisteredUsersList();
+                } else {
+                    // Stop refreshing if page is not visible
+                    if (registeredUsersRefreshInterval) {
+                        clearInterval(registeredUsersRefreshInterval);
+                        registeredUsersRefreshInterval = null;
+                    }
+                }
+            }, 5000);
+        }
+
+        function stopRegisteredUsersAutoRefresh() {
+            if (registeredUsersRefreshInterval) {
+                clearInterval(registeredUsersRefreshInterval);
+                registeredUsersRefreshInterval = null;
+            }
+        }
+
+        // Hook into page navigation to start/stop auto-refresh
+        const originalNavHandler = document.querySelectorAll('.nav-item[data-page]');
+        originalNavHandler.forEach(item => {
+            item.addEventListener('click', (e) => {
+                const targetPage = item.getAttribute('data-page');
+                if (targetPage === 'registration') {
+                    // Start auto-refresh when registration page is shown
+                    setTimeout(startRegisteredUsersAutoRefresh, 100);
+                } else {
+                    // Stop auto-refresh when leaving registration page
+                    stopRegisteredUsersAutoRefresh();
+                }
+            });
+        });
+
+        // Also check on initial load if registration page is active
+        if (document.getElementById('page-registration') && 
+            document.getElementById('page-registration').style.display !== 'none') {
+            startRegisteredUsersAutoRefresh();
         }
 
         // User search (on users page)

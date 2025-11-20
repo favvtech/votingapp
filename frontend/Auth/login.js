@@ -555,7 +555,7 @@
                                 circle.style.visibility = 'visible';
                                 circle.style.opacity = '1';
                                 circle.style.zIndex = '10000';
-                                setTimeout(() => {
+                    setTimeout(() => {
                                     circle.classList.add('show-popup');
                                 }, 100);
                                 console.log('Access code displayed from response:', codeToShow);
@@ -788,7 +788,7 @@
                                 circle.style.visibility = 'visible';
                                 circle.style.opacity = '1';
                                 circle.style.zIndex = '10000';
-                                setTimeout(() => {
+                    setTimeout(() => {
                                     circle.classList.add('show-popup');
                                 }, 100);
                                 console.log('Access code displayed from response:', codeToShow);

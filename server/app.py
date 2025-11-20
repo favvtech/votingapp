@@ -2612,6 +2612,62 @@ def create_app() -> Flask:
             logger.error(f"❌ Failed to delete event registration user: {exc}", exc_info=True)
             return jsonify({"success": False, "message": "Failed to delete registration record"}), 500
 
+    @app.get("/api/admin/registered-users")
+    def admin_get_registered_users():
+        """Get all registered users with their account status (admin only)"""
+        if not require_admin():
+            return jsonify({"success": False, "message": "Admin access required"}), 403
+        
+        try:
+            # Get all registered users from JSON file
+            registered_records = get_event_registration_records()
+            
+            # Get all users who have created accounts
+            use_postgresql = app.config.get('USE_POSTGRESQL', False)
+            account_phones = set()
+            
+            if use_postgresql:
+                from models import db, User
+                users = User.query.all()
+                for user in users:
+                    account_phones.add(normalize_phone(user.phone))
+            else:
+                conn = get_db()
+                cursor = conn.cursor()
+                cursor.execute("SELECT phone FROM users")
+                for row in cursor.fetchall():
+                    account_phones.add(normalize_phone(row[0]))
+                conn.close()
+            
+            # Build response with account status
+            result = []
+            for record in registered_records:
+                phone_norm = record.get('phone_norm') or normalize_phone(record.get('phone', ''))
+                has_account = phone_norm in account_phones
+                
+                result.append({
+                    "first_name": record.get('first_name', ''),
+                    "last_name": record.get('last_name', ''),
+                    "phone": record.get('phone', ''),
+                    "has_account": has_account,
+                    "status": "User" if has_account else "Registered"
+                })
+            
+            # Sort by last name, then first name for consistent ordering
+            result.sort(key=lambda x: (x['last_name'].lower(), x['first_name'].lower()))
+            
+            logger.info(f"✅ Returning {len(result)} registered users (admin)")
+            return jsonify({
+                "success": True,
+                "users": result,
+                "total": len(result),
+                "with_accounts": sum(1 for u in result if u['has_account']),
+                "without_accounts": sum(1 for u in result if not u['has_account'])
+            })
+        except Exception as e:
+            logger.error(f"❌ Error getting registered users: {e}", exc_info=True)
+            return jsonify({"success": False, "message": f"Failed to get registered users: {str(e)}"}), 500
+
     @app.get("/api/admin/event-registration-users/count")
     def admin_get_event_registration_users_count():
         """Get total count of event registration users (admin and analyst)"""

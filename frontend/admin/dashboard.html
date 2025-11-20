@@ -475,6 +475,40 @@
                             <p class="form-hint" style="margin-top: 16px; color: var(--error);">This will permanently remove the user from the registration list and delete their account if it exists.</p>
                         </div>
                     </div>
+
+                    <!-- Registered Users List Section -->
+                    <div class="content-card" style="margin-top: 24px;">
+                        <div class="card-header" style="display: flex; align-items: center; justify-content: space-between;">
+                            <div>
+                                <h2>Registered Users List</h2>
+                                <p class="page-subtitle" style="margin: 4px 0 0 0; font-size: 14px;" id="registeredUsersSummary">Loading...</p>
+                            </div>
+                            <button class="btn-secondary" id="refreshRegisteredUsersBtn" style="padding: 8px 16px; font-size: 14px;">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 6px; vertical-align: middle;">
+                                    <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16M21 12H3"/>
+                                </svg>
+                                Refresh
+                            </button>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-container">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th style="width: 60px;">#</th>
+                                            <th>First Name</th>
+                                            <th>Last Name</th>
+                                            <th>Phone Number</th>
+                                            <th style="width: 120px;">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="registeredUsersTableBody">
+                                        <tr><td colspan="5" class="loading">Loading registered users...</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Nominees Page -->

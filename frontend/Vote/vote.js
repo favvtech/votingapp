@@ -197,6 +197,8 @@
         // Updated to match all actual image files in frontend/images/category1/
         const availableImages = [
             'abel-ehiaguina',
+            'abraham-ikpe',
+            'adebowale-michael',
             'adenekan-kehinde',
             'adeniran-hallelujah',
             'adeniran-oyinkansola',
@@ -205,7 +207,6 @@
             'akinwunmi-taiwo',
             'ayepe-vanessa',
             'balogun-oluwatosin',
-            'bamidele-michael',
             'blessing-obaji',
             'bukola-ajisafe',
             'bunmi-ogundapo',
@@ -258,8 +259,10 @@
         const specialMappings = {
             'prosperity-peter': 'peter-prosperity',
             'peter-prosperity': 'peter-prosperity',
-            'adebowale-micheal': null, // No image available - will use placeholder
-            'abraham-ikpe': null, // No image available - will use placeholder
+            'adebowale-micheal': 'adebowale-michael', // Fixed spelling
+            'adebowale-michael': 'adebowale-michael',
+            'abraham-ikpe': 'abraham-ikpe',
+            'bamidele-michael': null, // No image - will use placeholder
             'olubisi-olamilekan': 'olasunkanmi-olamilekan',
             'elisha-okon-maurice': 'elisha-maurice',
             'musa-dauda-marvelous': 'marvelous-musa',

@@ -1415,6 +1415,55 @@ body {
     gap: 2px;
 }
 
+/* Status Badges for Registered Users List */
+.status-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.status-badge-user {
+    background-color: #10b981;
+    color: #ffffff;
+}
+
+.status-badge-registered {
+    background-color: #6b7280;
+    color: #ffffff;
+}
+
+/* Modern Row Number Styling */
+.row-number-cell {
+    text-align: center;
+    width: 60px;
+    padding: 12px 8px !important;
+}
+
+.row-number {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: linear-gradient(135deg, rgba(212, 175, 55, 0.1) 0%, rgba(212, 175, 55, 0.05) 100%);
+    border: 1.5px solid rgba(212, 175, 55, 0.2);
+    border-radius: 8px;
+    color: var(--gold);
+    font-weight: 700;
+    font-size: 13px;
+    transition: all 0.2s ease;
+}
+
+.data-table tbody tr:hover .row-number {
+    background: linear-gradient(135deg, rgba(212, 175, 55, 0.15) 0%, rgba(212, 175, 55, 0.08) 100%);
+    border-color: rgba(212, 175, 55, 0.3);
+    transform: scale(1.05);
+}
+
 .vote-badge {
     font-size: 20px;
     font-weight: 700;
