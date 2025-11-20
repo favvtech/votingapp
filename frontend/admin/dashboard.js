@@ -1918,8 +1918,8 @@
                             <td class="row-number-cell">
                                 <span class="row-number">${index + 1}</span>
                             </td>
-                            <td>${escapeHtml(user.first_name || '')}</td>
                             <td>${escapeHtml(user.last_name || '')}</td>
+                            <td>${escapeHtml(user.first_name || '')}</td>
                             <td>${escapeHtml(user.phone || '')}</td>
                             <td>
                                 <span class="status-badge ${statusClass}">${escapeHtml(statusText)}</span>

@@ -7,7 +7,6 @@ import string
 import logging
 import time
 import tempfile
-from functools import lru_cache
 from datetime import datetime, timedelta
 from typing import List, Set, Optional, Callable, Any
 from flask import Flask, jsonify, request, session
@@ -205,6 +204,7 @@ def load_registration_json_records(json_path: str) -> List[dict]:
 def sanitize_registration_records(records: List[dict]) -> List[dict]:
     """Ensure registration records have trimmed names and normalized phone numbers."""
     sanitized: List[dict] = []
+    seen_keys = set()
     for entry in records:
         if not isinstance(entry, dict):
             continue
@@ -216,6 +216,10 @@ def sanitize_registration_records(records: List[dict]) -> List[dict]:
         normalized_phone = normalize_phone(phone_value)
         if not normalized_phone:
             normalized_phone = str(phone_value).strip()
+        uniq_key = (normalize_name(first), normalize_name(last), normalized_phone)
+        if uniq_key in seen_keys:
+            continue
+        seen_keys.add(uniq_key)
         sanitized.append({
             "first_name": first,
             "last_name": last,
@@ -274,9 +278,8 @@ def persist_registration_records(records: List[dict], json_path: str, csv_path: 
     atomic_write_json(json_path, sanitized)
     atomic_write_registration_csv(csv_path, sanitized)
     return sanitized
-@lru_cache(maxsize=1)
 def get_event_registration_records() -> List[dict]:
-    """Load event registration users from JSON file and cache the result."""
+    """Always load event registration users from JSON file (avoids stale caches)."""
     path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'event_registration_users.json'))
     try:
         with open(path, 'r', encoding='utf-8') as f:
@@ -2540,9 +2543,6 @@ def create_app() -> Flask:
             json_records.append(payload_entry)
             persist_registration_records(json_records, json_path, csv_path)
 
-            # Refresh cached records
-            get_event_registration_records.cache_clear()
-
             logger.info("✅ Added event registration user via admin: %s %s (%s)", first_name, last_name, normalized_phone)
             return jsonify({"success": True, "message": "Registration record added successfully"})
         except Exception as exc:
@@ -2674,9 +2674,6 @@ def create_app() -> Flask:
             except Exception as e:
                 logger.error(f"Error deleting user account: {e}", exc_info=True)
                 # Don't fail the whole operation if account deletion fails
-
-            # Refresh cached records
-            get_event_registration_records.cache_clear()
 
             message = "Registration record deleted permanently"
             if account_deleted:
