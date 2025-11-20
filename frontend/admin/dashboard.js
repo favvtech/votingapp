@@ -1945,49 +1945,14 @@
             });
         }
 
-        // Auto-refresh when on registration page
-        function startRegisteredUsersAutoRefresh() {
-            // Clear existing interval
-            if (registeredUsersRefreshInterval) {
-                clearInterval(registeredUsersRefreshInterval);
-            }
-            
-            // Load immediately
-            loadRegisteredUsersList();
-            
-            // Set up auto-refresh every 5 seconds
-            registeredUsersRefreshInterval = setInterval(() => {
-                const registrationPage = document.getElementById('page-registration');
-                if (registrationPage && registrationPage.style.display !== 'none') {
-                    loadRegisteredUsersList();
-                } else {
-                    // Stop refreshing if page is not visible
-                    if (registeredUsersRefreshInterval) {
-                        clearInterval(registeredUsersRefreshInterval);
-                        registeredUsersRefreshInterval = null;
-                    }
-                }
-            }, 5000);
-        }
-
-        function stopRegisteredUsersAutoRefresh() {
-            if (registeredUsersRefreshInterval) {
-                clearInterval(registeredUsersRefreshInterval);
-                registeredUsersRefreshInterval = null;
-            }
-        }
-
-        // Hook into page navigation to start/stop auto-refresh
+        // Load registered users list when registration page is shown (no auto-refresh)
         const originalNavHandler = document.querySelectorAll('.nav-item[data-page]');
         originalNavHandler.forEach(item => {
             item.addEventListener('click', (e) => {
                 const targetPage = item.getAttribute('data-page');
                 if (targetPage === 'registration') {
-                    // Start auto-refresh when registration page is shown
-                    setTimeout(startRegisteredUsersAutoRefresh, 100);
-                } else {
-                    // Stop auto-refresh when leaving registration page
-                    stopRegisteredUsersAutoRefresh();
+                    // Load list when registration page is shown
+                    setTimeout(loadRegisteredUsersList, 100);
                 }
             });
         });
@@ -1995,7 +1960,7 @@
         // Also check on initial load if registration page is active
         if (document.getElementById('page-registration') && 
             document.getElementById('page-registration').style.display !== 'none') {
-            startRegisteredUsersAutoRefresh();
+            loadRegisteredUsersList();
         }
 
         // User search (on users page)

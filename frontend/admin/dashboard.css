@@ -753,16 +753,18 @@ body {
 
 /* Buttons */
 .btn-primary {
-    padding: 10px 20px;
+    padding: 8px 16px;
     background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
     color: #1A1814;
     border: none;
     border-radius: 8px;
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s;
     box-shadow: 0 2px 4px rgba(212, 175, 55, 0.2);
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .btn-primary:hover {
@@ -790,15 +792,17 @@ body {
 }
 
 .btn-danger {
-    padding: 10px 20px;
+    padding: 8px 16px;
     background: var(--error);
     color: #ffffff;
     border: none;
     border-radius: 8px;
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s;
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .btn-danger:hover {
@@ -828,7 +832,7 @@ body {
 /* Forms */
 .form-inline {
     display: flex;
-    gap: 16px;
+    gap: 12px;
     flex-wrap: wrap;
     align-items: flex-end;
 }
@@ -839,6 +843,23 @@ body {
     gap: 6px;
     flex: 1;
     min-width: 150px;
+    max-width: 100%;
+}
+
+.form-inline .form-group:last-of-type {
+    flex: 0 0 auto;
+}
+
+/* Ensure buttons in forms don't overlap */
+.form-inline button[type="submit"] {
+    margin-top: 0;
+    align-self: flex-end;
+    min-width: 140px;
+}
+
+/* Phone group should not shrink too much */
+.phone-group {
+    min-width: 200px;
 }
 
 .form-group label {
