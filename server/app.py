@@ -6,6 +6,7 @@ import secrets
 import string
 import logging
 import time
+import tempfile
 from functools import lru_cache
 from datetime import datetime, timedelta
 from typing import List, Set, Optional, Callable, Any
@@ -183,6 +184,96 @@ def normalize_phone(value: str) -> str:
         digits = digits[-10:].rjust(10, '0')
     return '+234' + digits
 
+def load_registration_json_records(json_path: str) -> List[dict]:
+    """Read raw registration records from JSON file."""
+    if not os.path.exists(json_path) or os.path.getsize(json_path) == 0:
+        return []
+    try:
+        with open(json_path, 'r', encoding='utf-8') as jf:
+            data = json.load(jf)
+            if isinstance(data, list):
+                return data
+            logger.warning("Registration JSON is not a list. Resetting to empty list.")
+            return []
+    except json.JSONDecodeError as exc:
+        logger.error(f"Unable to parse registration JSON: {exc}", exc_info=True)
+        return []
+    except Exception as exc:
+        logger.error(f"Error reading registration JSON: {exc}", exc_info=True)
+        return []
+
+def sanitize_registration_records(records: List[dict]) -> List[dict]:
+    """Ensure registration records have trimmed names and normalized phone numbers."""
+    sanitized: List[dict] = []
+    for entry in records:
+        if not isinstance(entry, dict):
+            continue
+        first = (entry.get('first_name') or '').strip()
+        last = (entry.get('last_name') or '').strip()
+        phone_value = entry.get('phone') or entry.get('phone_norm') or ''
+        if not (first and last and phone_value):
+            continue
+        normalized_phone = normalize_phone(phone_value)
+        if not normalized_phone:
+            normalized_phone = str(phone_value).strip()
+        sanitized.append({
+            "first_name": first,
+            "last_name": last,
+            "phone": normalized_phone
+        })
+    return sanitized
+
+def atomic_write_json(path: str, payload: List[dict]) -> None:
+    """Write JSON payload atomically to avoid partial writes."""
+    dir_path = os.path.dirname(path) or '.'
+    os.makedirs(dir_path, exist_ok=True)
+    tmp_name = None
+    try:
+        with tempfile.NamedTemporaryFile('w', delete=False, dir=dir_path, encoding='utf-8') as tmp_file:
+            json.dump(payload, tmp_file, ensure_ascii=False, indent=2)
+            tmp_file.flush()
+            os.fsync(tmp_file.fileno())
+            tmp_name = tmp_file.name
+        os.replace(tmp_name, path)
+    finally:
+        if tmp_name and os.path.exists(tmp_name):
+            try:
+                os.remove(tmp_name)
+            except OSError:
+                pass
+
+def atomic_write_registration_csv(path: str, records: List[dict]) -> None:
+    """Rewrite the CSV file using the provided registration records."""
+    dir_path = os.path.dirname(path) or '.'
+    os.makedirs(dir_path, exist_ok=True)
+    tmp_name = None
+    try:
+        with tempfile.NamedTemporaryFile('w', delete=False, dir=dir_path, encoding='utf-8', newline='') as tmp_file:
+            writer = csv.writer(tmp_file)
+            writer.writerow(["first_name", "last_name", "phone"])
+            for entry in records:
+                writer.writerow([
+                    (entry.get('first_name') or '').strip(),
+                    (entry.get('last_name') or '').strip(),
+                    (entry.get('phone') or '').strip()
+                ])
+            tmp_file.flush()
+            os.fsync(tmp_file.fileno())
+            tmp_name = tmp_file.name
+        os.replace(tmp_name, path)
+    finally:
+        if tmp_name and os.path.exists(tmp_name):
+            try:
+                os.remove(tmp_name)
+            except OSError:
+                pass
+
+def persist_registration_records(records: List[dict], json_path: str, csv_path: str) -> List[dict]:
+    """Save registration records to both JSON and CSV atomically."""
+    sanitized = sanitize_registration_records(records)
+    atomic_write_json(json_path, sanitized)
+    atomic_write_registration_csv(csv_path, sanitized)
+    return sanitized
 @lru_cache(maxsize=1)
 def get_event_registration_records() -> List[dict]:
     """Load event registration users from JSON file and cache the result."""
@@ -2445,26 +2536,9 @@ def create_app() -> Flask:
         csv_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'event_registration_users.csv'))
 
         try:
-            # Update JSON file
-            json_records = []
-            if os.path.exists(json_path) and os.path.getsize(json_path) > 0:
-                with open(json_path, 'r', encoding='utf-8') as jf:
-                    try:
-                        json_records = json.load(jf)
-                    except json.JSONDecodeError:
-                        json_records = []
-
+            json_records = load_registration_json_records(json_path)
             json_records.append(payload_entry)
-            with open(json_path, 'w', encoding='utf-8') as jf:
-                json.dump(json_records, jf, ensure_ascii=False, indent=2)
-
-            # Update CSV file
-            write_header = not os.path.exists(csv_path) or os.path.getsize(csv_path) == 0
-            with open(csv_path, 'a', newline='', encoding='utf-8') as cf:
-                writer = csv.writer(cf)
-                if write_header:
-                    writer.writerow(["first_name", "last_name", "phone"])
-                writer.writerow([first_name, last_name, normalized_phone])
+            persist_registration_records(json_records, json_path, csv_path)
 
             # Refresh cached records
             get_event_registration_records.cache_clear()
@@ -2500,99 +2574,38 @@ def create_app() -> Flask:
         json_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'event_registration_users.json'))
         csv_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'event_registration_users.csv'))
 
-        found_in_json = False
-        found_in_csv = False
-        json_error = None
-        csv_error = None
-
         try:
-            # Remove from JSON file
-            if os.path.exists(json_path):
-                try:
-                    json_records = []
-                    if os.path.getsize(json_path) > 0:
-                        with open(json_path, 'r', encoding='utf-8') as jf:
-                            try:
-                                json_records = json.load(jf)
-                            except json.JSONDecodeError as e:
-                                logger.warning(f"JSON decode error in delete: {e}")
-                                json_records = []
-                    
-                    # Filter out the matching record - try multiple matching strategies
-                    original_count = len(json_records)
-                    filtered_records = []
-                    for rec in json_records:
-                        rec_first = (rec.get('first_name') or '').strip()
-                        rec_last = (rec.get('last_name') or '').strip()
-                        rec_phone = (rec.get('phone') or '').strip()
-                        
-                        # Normalize for comparison
-                        rec_first_norm = normalize_name(rec_first)
-                        rec_last_norm = normalize_name(rec_last)
-                        rec_phone_norm = normalize_phone(rec_phone)
-                        
-                        # Match by phone OR by name (flexible matching)
-                        phone_match = rec_phone_norm == phone_norm or rec_phone == phone_norm or rec_phone == phone_input
-                        name_match = (rec_first_norm == first_norm and rec_last_norm == last_norm) or \
-                                    (rec_first == first_name and rec_last == last_name)
-                        
-                        if not (phone_match or name_match):
-                            filtered_records.append(rec)
-                        else:
-                            found_in_json = True
-                            logger.info(f"Found match in JSON: {rec_first} {rec_last} ({rec_phone})")
-                    
-                    # Write back to JSON file
-                    with open(json_path, 'w', encoding='utf-8') as jf:
-                        json.dump(filtered_records, jf, ensure_ascii=False, indent=2)
-                    logger.info(f"✅ Updated JSON file: removed {original_count - len(filtered_records)} record(s)")
-                except Exception as e:
-                    json_error = str(e)
-                    logger.error(f"Error processing JSON file: {e}", exc_info=True)
+            json_records = load_registration_json_records(json_path)
+            if not json_records:
+                return jsonify({"success": False, "message": "Sorry, account doesn't exist"}), 404
 
-            # Remove from CSV file
-            if os.path.exists(csv_path):
-                try:
-                    rows = []
-                    if os.path.getsize(csv_path) > 0:
-                        with open(csv_path, 'r', encoding='utf-8', newline='') as cf:
-                            reader = csv.reader(cf)
-                            header = next(reader, None)
-                            if header:
-                                rows.append(header)
-                            for row in reader:
-                                if len(row) >= 3:
-                                    row_first = (row[0] or '').strip()
-                                    row_last = (row[1] or '').strip()
-                                    row_phone = (row[2] or '').strip()
-                                    
-                                    # Normalize for comparison
-                                    row_first_norm = normalize_name(row_first)
-                                    row_last_norm = normalize_name(row_last)
-                                    row_phone_norm = normalize_phone(row_phone)
-                                    
-                                    # Match by phone OR by name (flexible matching)
-                                    phone_match = row_phone_norm == phone_norm or row_phone == phone_norm or row_phone == phone_input
-                                    name_match = (row_first_norm == first_norm and row_last_norm == last_norm) or \
-                                                (row_first == first_name and row_last == last_name)
-                                    
-                                    if not (phone_match or name_match):
-                                        rows.append(row)
-                                    else:
-                                        found_in_csv = True
-                                        logger.info(f"Found match in CSV: {row_first} {row_last} ({row_phone})")
-                                else:
-                                    # Keep malformed rows
-                                    rows.append(row)
-                    
-                    # Write back to CSV file
-                    with open(csv_path, 'w', encoding='utf-8', newline='') as cf:
-                        writer = csv.writer(cf)
-                        writer.writerows(rows)
-                    logger.info(f"✅ Updated CSV file: removed record")
-                except Exception as e:
-                    csv_error = str(e)
-                    logger.error(f"Error processing CSV file: {e}", exc_info=True)
+            updated_records = []
+            match_found = False
+
+            for rec in json_records:
+                rec_first = (rec.get('first_name') or '').strip()
+                rec_last = (rec.get('last_name') or '').strip()
+                rec_phone = (rec.get('phone') or '').strip()
+
+                rec_first_norm = normalize_name(rec_first)
+                rec_last_norm = normalize_name(rec_last)
+                rec_phone_norm = normalize_phone(rec_phone)
+
+                if rec_first_norm == first_norm and rec_last_norm == last_norm and rec_phone_norm == phone_norm:
+                    match_found = True
+                    continue
+
+                updated_records.append({
+                    "first_name": rec_first,
+                    "last_name": rec_last,
+                    "phone": rec_phone
+                })
+
+            if not match_found:
+                return jsonify({"success": False, "message": "Sorry, account doesn't exist"}), 404
+
+            persist_registration_records(updated_records, json_path, csv_path)
+            logger.info("✅ Removed registration entry for %s %s (%s)", first_name, last_name, phone_norm)
 
             # Delete user account from database if it exists
             account_deleted = False
@@ -2665,38 +2678,15 @@ def create_app() -> Flask:
             # Refresh cached records
             get_event_registration_records.cache_clear()
 
-            # Check if deletion was successful in at least one file
-            if not found_in_json and not found_in_csv:
-                error_msg = "User not found in registration files"
-                if json_error:
-                    error_msg += f" (JSON error: {json_error})"
-                if csv_error:
-                    error_msg += f" (CSV error: {csv_error})"
-                logger.warning(f"⚠️ User not found: {first_name} {last_name} ({phone_norm})")
-                return jsonify({"success": False, "message": error_msg}), 404
-
-            # Build success message
-            parts = []
-            if found_in_json:
-                parts.append("JSON file")
-            if found_in_csv:
-                parts.append("CSV file")
+            message = "Registration record deleted permanently"
             if account_deleted:
-                parts.append("user account")
-            
-            message = f"Registration record deleted successfully from {', '.join(parts)}"
-            
-            # Log warnings if there were errors but deletion still succeeded
-            if json_error:
-                logger.warning(f"⚠️ JSON error during deletion (but deletion succeeded): {json_error}")
-            if csv_error:
-                logger.warning(f"⚠️ CSV error during deletion (but deletion succeeded): {csv_error}")
+                message += " and linked user account removed"
             
             logger.info(f"✅ Deleted event registration user: {first_name} {last_name} ({phone_norm})")
             return jsonify({"success": True, "message": message})
         except Exception as exc:
             logger.error(f"❌ Failed to delete event registration user: {exc}", exc_info=True)
-            return jsonify({"success": False, "message": f"Failed to delete registration record: {str(exc)}"}), 500
+            return jsonify({"success": False, "message": "Failed to delete registration record"}), 500
 
     @app.get("/api/admin/registered-users")
     def admin_get_registered_users():
