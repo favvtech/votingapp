@@ -2500,117 +2500,203 @@ def create_app() -> Flask:
         json_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'event_registration_users.json'))
         csv_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'event_registration_users.csv'))
 
+        found_in_json = False
+        found_in_csv = False
+        json_error = None
+        csv_error = None
+
         try:
             # Remove from JSON file
-            json_records = []
-            found_in_json = False
-            if os.path.exists(json_path) and os.path.getsize(json_path) > 0:
-                with open(json_path, 'r', encoding='utf-8') as jf:
-                    try:
-                        json_records = json.load(jf)
-                    except json.JSONDecodeError:
-                        json_records = []
-                
-                # Filter out the matching record
-                original_count = len(json_records)
-                json_records = [
-                    rec for rec in json_records
-                    if not (
-                        rec.get("phone", "").strip() == phone_norm or
-                        (normalize_name(rec.get("first_name", "").strip()) == first_norm and
-                         normalize_name(rec.get("last_name", "").strip()) == last_norm)
-                    )
-                ]
-                found_in_json = len(json_records) < original_count
-                
-                with open(json_path, 'w', encoding='utf-8') as jf:
-                    json.dump(json_records, jf, ensure_ascii=False, indent=2)
+            if os.path.exists(json_path):
+                try:
+                    json_records = []
+                    if os.path.getsize(json_path) > 0:
+                        with open(json_path, 'r', encoding='utf-8') as jf:
+                            try:
+                                json_records = json.load(jf)
+                            except json.JSONDecodeError as e:
+                                logger.warning(f"JSON decode error in delete: {e}")
+                                json_records = []
+                    
+                    # Filter out the matching record - try multiple matching strategies
+                    original_count = len(json_records)
+                    filtered_records = []
+                    for rec in json_records:
+                        rec_first = (rec.get('first_name') or '').strip()
+                        rec_last = (rec.get('last_name') or '').strip()
+                        rec_phone = (rec.get('phone') or '').strip()
+                        
+                        # Normalize for comparison
+                        rec_first_norm = normalize_name(rec_first)
+                        rec_last_norm = normalize_name(rec_last)
+                        rec_phone_norm = normalize_phone(rec_phone)
+                        
+                        # Match by phone OR by name (flexible matching)
+                        phone_match = rec_phone_norm == phone_norm or rec_phone == phone_norm or rec_phone == phone_input
+                        name_match = (rec_first_norm == first_norm and rec_last_norm == last_norm) or \
+                                    (rec_first == first_name and rec_last == last_name)
+                        
+                        if not (phone_match or name_match):
+                            filtered_records.append(rec)
+                        else:
+                            found_in_json = True
+                            logger.info(f"Found match in JSON: {rec_first} {rec_last} ({rec_phone})")
+                    
+                    # Write back to JSON file
+                    with open(json_path, 'w', encoding='utf-8') as jf:
+                        json.dump(filtered_records, jf, ensure_ascii=False, indent=2)
+                    logger.info(f"✅ Updated JSON file: removed {original_count - len(filtered_records)} record(s)")
+                except Exception as e:
+                    json_error = str(e)
+                    logger.error(f"Error processing JSON file: {e}", exc_info=True)
 
             # Remove from CSV file
-            found_in_csv = False
-            if os.path.exists(csv_path) and os.path.getsize(csv_path) > 0:
-                rows = []
-                with open(csv_path, 'r', encoding='utf-8', newline='') as cf:
-                    reader = csv.reader(cf)
-                    header = next(reader, None)
-                    if header:
-                        rows.append(header)
-                    for row in reader:
-                        if len(row) >= 3:
-                            row_phone = normalize_phone(row[2].strip()) if row[2] else ""
-                            row_first = normalize_name(row[0].strip()) if row[0] else ""
-                            row_last = normalize_name(row[1].strip()) if row[1] else ""
-                            if not (
-                                row_phone == phone_norm or
-                                (row_first == first_norm and row_last == last_norm)
-                            ):
-                                rows.append(row)
-                            else:
-                                found_in_csv = True
-                        else:
-                            rows.append(row)
-                
-                with open(csv_path, 'w', encoding='utf-8', newline='') as cf:
-                    writer = csv.writer(cf)
-                    writer.writerows(rows)
+            if os.path.exists(csv_path):
+                try:
+                    rows = []
+                    if os.path.getsize(csv_path) > 0:
+                        with open(csv_path, 'r', encoding='utf-8', newline='') as cf:
+                            reader = csv.reader(cf)
+                            header = next(reader, None)
+                            if header:
+                                rows.append(header)
+                            for row in reader:
+                                if len(row) >= 3:
+                                    row_first = (row[0] or '').strip()
+                                    row_last = (row[1] or '').strip()
+                                    row_phone = (row[2] or '').strip()
+                                    
+                                    # Normalize for comparison
+                                    row_first_norm = normalize_name(row_first)
+                                    row_last_norm = normalize_name(row_last)
+                                    row_phone_norm = normalize_phone(row_phone)
+                                    
+                                    # Match by phone OR by name (flexible matching)
+                                    phone_match = row_phone_norm == phone_norm or row_phone == phone_norm or row_phone == phone_input
+                                    name_match = (row_first_norm == first_norm and row_last_norm == last_norm) or \
+                                                (row_first == first_name and row_last == last_name)
+                                    
+                                    if not (phone_match or name_match):
+                                        rows.append(row)
+                                    else:
+                                        found_in_csv = True
+                                        logger.info(f"Found match in CSV: {row_first} {row_last} ({row_phone})")
+                                else:
+                                    # Keep malformed rows
+                                    rows.append(row)
+                    
+                    # Write back to CSV file
+                    with open(csv_path, 'w', encoding='utf-8', newline='') as cf:
+                        writer = csv.writer(cf)
+                        writer.writerows(rows)
+                    logger.info(f"✅ Updated CSV file: removed record")
+                except Exception as e:
+                    csv_error = str(e)
+                    logger.error(f"Error processing CSV file: {e}", exc_info=True)
 
             # Delete user account from database if it exists
             account_deleted = False
             use_postgresql = app.config.get('USE_POSTGRESQL', False)
-            if use_postgresql:
-                from models import db, User
-                user = User.query.filter_by(phone=phone_norm).first()
-                if not user:
-                    # Try by name match
-                    user = User.query.filter(
-                        db.func.lower(User.firstname) == first_norm.lower(),
-                        db.func.lower(User.lastname) == last_norm.lower()
-                    ).first()
-                if user:
-                    # Delete user's votes first
-                    from models import Vote
-                    Vote.query.filter_by(user_id=user.id).delete()
-                    db.session.delete(user)
-                    db.session.commit()
-                    account_deleted = True
-                    logger.info(f"✅ Deleted user account from PostgreSQL: {user.firstname} {user.lastname} ({phone_norm})")
-            else:
-                # SQLite
-                conn = get_db()
-                cur = conn.cursor()
-                # Find user by phone or name
-                cur.execute("SELECT id FROM users WHERE phone = ?", (phone_norm,))
-                user_row = cur.fetchone()
-                if not user_row:
-                    cur.execute("SELECT id FROM users WHERE LOWER(firstname) = LOWER(?) AND LOWER(lastname) = LOWER(?)", 
-                               (first_name, last_name))
-                    user_row = cur.fetchone()
-                if user_row:
-                    user_id = user_row[0]
-                    # Delete votes
-                    cur.execute("DELETE FROM votes WHERE user_id = ?", (user_id,))
-                    # Delete user
-                    cur.execute("DELETE FROM users WHERE id = ?", (user_id,))
-                    conn.commit()
-                    account_deleted = True
-                    logger.info(f"✅ Deleted user account from SQLite: ID {user_id} ({phone_norm})")
-                conn.close()
+            
+            # Build full name for matching (User model uses fullname field)
+            full_name = f"{first_name} {last_name}".strip()
+            full_name_norm = normalize_name(full_name)
+            
+            try:
+                if use_postgresql:
+                    from models import db, User, Vote, Session, UserState
+                    # Try to find user by phone first
+                    user = User.query.filter_by(phone=phone_norm).first()
+                    if not user:
+                        # Try by fullname match (normalized)
+                        users = User.query.all()
+                        for u in users:
+                            if normalize_name(u.fullname) == full_name_norm:
+                                user = u
+                                break
+                    
+                    if user:
+                        # Delete in correct order to avoid foreign key violations
+                        # 1. Delete user's sessions
+                        Session.query.filter_by(user_id=user.id).delete()
+                        # 2. Delete user's states
+                        UserState.query.filter_by(user_id=user.id).delete()
+                        # 3. Delete user's votes
+                        Vote.query.filter_by(user_id=user.id).delete()
+                        # 4. Finally delete the user
+                        db.session.delete(user)
+                        db.session.commit()
+                        account_deleted = True
+                        logger.info(f"✅ Deleted user account from PostgreSQL: {user.fullname} ({phone_norm})")
+                else:
+                    # SQLite
+                    conn = get_db()
+                    cur = conn.cursor()
+                    try:
+                        # Find user by phone first
+                        cur.execute("SELECT id, fullname FROM users WHERE phone = ?", (phone_norm,))
+                        user_row = cur.fetchone()
+                        
+                        if not user_row:
+                            # Try by fullname match (normalized)
+                            cur.execute("SELECT id, fullname FROM users")
+                            all_users = cur.fetchall()
+                            for u in all_users:
+                                if normalize_name(u[1]) == full_name_norm:
+                                    user_row = u
+                                    break
+                        
+                        if user_row:
+                            user_id = user_row[0]
+                            # Delete in correct order
+                            cur.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+                            cur.execute("DELETE FROM user_states WHERE user_id = ?", (user_id,))
+                            cur.execute("DELETE FROM votes WHERE user_id = ?", (user_id,))
+                            cur.execute("DELETE FROM users WHERE id = ?", (user_id,))
+                            conn.commit()
+                            account_deleted = True
+                            logger.info(f"✅ Deleted user account from SQLite: ID {user_id} ({phone_norm})")
+                    finally:
+                        conn.close()
+            except Exception as e:
+                logger.error(f"Error deleting user account: {e}", exc_info=True)
+                # Don't fail the whole operation if account deletion fails
 
             # Refresh cached records
             get_event_registration_records.cache_clear()
 
+            # Check if deletion was successful in at least one file
             if not found_in_json and not found_in_csv:
-                return jsonify({"success": False, "message": "User does not exist"}), 404
+                error_msg = "User not found in registration files"
+                if json_error:
+                    error_msg += f" (JSON error: {json_error})"
+                if csv_error:
+                    error_msg += f" (CSV error: {csv_error})"
+                logger.warning(f"⚠️ User not found: {first_name} {last_name} ({phone_norm})")
+                return jsonify({"success": False, "message": error_msg}), 404
 
-            message = "Registration record deleted successfully"
+            # Build success message
+            parts = []
+            if found_in_json:
+                parts.append("JSON file")
+            if found_in_csv:
+                parts.append("CSV file")
             if account_deleted:
-                message += " and user account removed"
+                parts.append("user account")
+            
+            message = f"Registration record deleted successfully from {', '.join(parts)}"
+            
+            # Log warnings if there were errors but deletion still succeeded
+            if json_error:
+                logger.warning(f"⚠️ JSON error during deletion (but deletion succeeded): {json_error}")
+            if csv_error:
+                logger.warning(f"⚠️ CSV error during deletion (but deletion succeeded): {csv_error}")
             
             logger.info(f"✅ Deleted event registration user: {first_name} {last_name} ({phone_norm})")
             return jsonify({"success": True, "message": message})
         except Exception as exc:
             logger.error(f"❌ Failed to delete event registration user: {exc}", exc_info=True)
-            return jsonify({"success": False, "message": "Failed to delete registration record"}), 500
+            return jsonify({"success": False, "message": f"Failed to delete registration record: {str(exc)}"}), 500
 
     @app.get("/api/admin/registered-users")
     def admin_get_registered_users():
