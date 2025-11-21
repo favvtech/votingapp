@@ -111,3 +111,32 @@ class UserState(db.Model):
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
 
+
+class EventRegistrationUser(db.Model):
+    """Persistent list of YSA registration entries (first, last, phone)."""
+    __tablename__ = 'event_registration_users'
+
+    id = db.Column(db.Integer, primary_key=True)
+    first_name = db.Column(db.String(255), nullable=False)
+    last_name = db.Column(db.String(255), nullable=False)
+    phone = db.Column(db.String(50), nullable=False)
+    first_norm = db.Column(db.String(255), nullable=False, index=True)
+    last_norm = db.Column(db.String(255), nullable=False, index=True)
+    phone_norm = db.Column(db.String(50), nullable=False, unique=True, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint('first_norm', 'last_norm', name='uq_event_reg_name'),
+    )
+
+    def to_dict(self):
+        return {
+            "first_name": self.first_name,
+            "last_name": self.last_name,
+            "phone": self.phone,
+            "first_norm": self.first_norm,
+            "last_norm": self.last_norm,
+            "phone_norm": self.phone_norm,
+        }
+

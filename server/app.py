@@ -8,8 +8,8 @@ import logging
 import time
 import tempfile
 from datetime import datetime, timedelta
-from typing import List, Set, Optional, Callable, Any
-from flask import Flask, jsonify, request, session
+from typing import List, Set, Optional, Callable, Any, Tuple
+from flask import Flask, jsonify, request, session, current_app
 from flask_cors import CORS
 from dotenv import load_dotenv
 import requests
@@ -126,6 +126,23 @@ def init_db():
         )
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_user_states_user_id ON user_states(user_id)')
+
+    # Event registration users table (persistent whitelist for signup)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS event_registration_users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            first_name TEXT NOT NULL,
+            last_name TEXT NOT NULL,
+            phone TEXT NOT NULL,
+            first_norm TEXT NOT NULL,
+            last_norm TEXT NOT NULL,
+            phone_norm TEXT NOT NULL UNIQUE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_event_reg_name ON event_registration_users(first_norm, last_norm)')
+    cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_event_reg_phone ON event_registration_users(phone_norm)')
     
     conn.commit()
     conn.close()
@@ -278,39 +295,293 @@ def persist_registration_records(records: List[dict], json_path: str, csv_path: 
     atomic_write_json(json_path, sanitized)
     atomic_write_registration_csv(csv_path, sanitized)
     return sanitized
-def get_event_registration_records() -> List[dict]:
-    """Always load event registration users from JSON file (avoids stale caches)."""
-    path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'event_registration_users.json'))
-    try:
-        with open(path, 'r', encoding='utf-8') as f:
-            raw_records = json.load(f)
-    except FileNotFoundError:
-        logger.warning(f"Event registration file not found at {path}")
-        return []
-    except Exception as exc:
-        logger.error(f"Failed to load event registration users: {exc}", exc_info=True)
-        return []
 
+def get_registration_storage_paths() -> Tuple[str, str]:
+    """Return absolute paths for the registration JSON and CSV files."""
+    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    json_path = os.path.join(base_dir, 'event_registration_users.json')
+    csv_path = os.path.join(base_dir, 'event_registration_users.csv')
+    return json_path, csv_path
+
+def load_registration_csv_records(csv_path: str) -> List[dict]:
+    """Read raw registration records from CSV file."""
+    if not os.path.exists(csv_path) or os.path.getsize(csv_path) == 0:
+        return []
     records: List[dict] = []
-    for entry in raw_records:
-        first = (entry.get('first_name') or '').strip()
-        last = (entry.get('last_name') or '').strip()
-        phone = entry.get('phone')
-        phone_normalized = normalize_phone(phone)
-        first_norm = normalize_name(first)
-        last_norm = normalize_name(last)
-        if not first_norm or not last_norm or not phone_normalized:
-            continue
-        records.append({
-            "first_name": first,
-            "last_name": last,
-            "phone": phone_normalized,
-            "first_norm": first_norm,
-            "last_norm": last_norm,
-            "phone_norm": phone_normalized
-        })
-    logger.info(f"Loaded {len(records)} event registration records from {path}")
+    try:
+        with open(csv_path, 'r', encoding='utf-8') as cf:
+            reader = csv.DictReader(cf)
+            for row in reader:
+                first = (row.get('first_name') or '').strip()
+                last = (row.get('last_name') or '').strip()
+                phone = (row.get('phone') or '').strip()
+                if first or last or phone:
+                    records.append({
+                        "first_name": first,
+                        "last_name": last,
+                        "phone": phone
+                    })
+    except Exception as exc:
+        logger.error(f"Error reading registration CSV: {exc}", exc_info=True)
     return records
+
+def fetch_registration_records_from_db(use_postgresql: bool) -> List[dict]:
+    """Fetch all registration records from the persistent database."""
+    records: List[dict] = []
+    try:
+        if use_postgresql:
+            from models import EventRegistrationUser
+            db_records = EventRegistrationUser.query.order_by(
+                EventRegistrationUser.last_norm,
+                EventRegistrationUser.first_norm
+            ).all()
+            records = [rec.to_dict() for rec in db_records]
+        else:
+            conn = get_db()
+            try:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT first_name, last_name, phone, first_norm, last_norm, phone_norm
+                    FROM event_registration_users
+                    ORDER BY last_norm, first_norm
+                """)
+                rows = cursor.fetchall()
+            finally:
+                conn.close()
+            for row in rows:
+                records.append({
+                    "first_name": row[0],
+                    "last_name": row[1],
+                    "phone": row[2],
+                    "first_norm": row[3],
+                    "last_norm": row[4],
+                    "phone_norm": row[5],
+                })
+    except Exception as exc:
+        logger.error(f"Failed to fetch registration records from DB: {exc}", exc_info=True)
+    return records
+
+def fetch_registration_entry_from_db(first_norm: str, last_norm: str, phone_norm: str, use_postgresql: bool) -> Optional[dict]:
+    """Fetch single registration entry by normalized fields."""
+    if not (first_norm and last_norm and phone_norm):
+        return None
+    try:
+        if use_postgresql:
+            from models import EventRegistrationUser
+            record = EventRegistrationUser.query.filter_by(
+                first_norm=first_norm,
+                last_norm=last_norm,
+                phone_norm=phone_norm
+            ).first()
+            return record.to_dict() if record else None
+        else:
+            conn = get_db()
+            try:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT first_name, last_name, phone, first_norm, last_norm, phone_norm
+                    FROM event_registration_users
+                    WHERE first_norm = ? AND last_norm = ? AND phone_norm = ?
+                    LIMIT 1
+                """, (first_norm, last_norm, phone_norm))
+                row = cursor.fetchone()
+            finally:
+                conn.close()
+            if row:
+                return {
+                    "first_name": row[0],
+                    "last_name": row[1],
+                    "phone": row[2],
+                    "first_norm": row[3],
+                    "last_norm": row[4],
+                    "phone_norm": row[5],
+                }
+    except Exception as exc:
+        logger.error(f"Error fetching registration entry: {exc}", exc_info=True)
+    return None
+
+def registration_phone_exists(phone_norm: str, use_postgresql: bool) -> bool:
+    """Check if a normalized phone already exists."""
+    if not phone_norm:
+        return False
+    try:
+        if use_postgresql:
+            from models import EventRegistrationUser
+            return EventRegistrationUser.query.filter_by(phone_norm=phone_norm).first() is not None
+        else:
+            conn = get_db()
+            try:
+                cursor = conn.cursor()
+                cursor.execute("SELECT 1 FROM event_registration_users WHERE phone_norm = ? LIMIT 1", (phone_norm,))
+                exists = cursor.fetchone() is not None
+            finally:
+                conn.close()
+            return exists
+    except Exception as exc:
+        logger.error(f"Error checking registration phone existence: {exc}", exc_info=True)
+        return False
+
+def registration_name_exists(first_norm: str, last_norm: str, use_postgresql: bool) -> bool:
+    """Check if a normalized first/last name combo already exists."""
+    if not (first_norm and last_norm):
+        return False
+    try:
+        if use_postgresql:
+            from models import EventRegistrationUser
+            return EventRegistrationUser.query.filter_by(
+                first_norm=first_norm,
+                last_norm=last_norm
+            ).first() is not None
+        else:
+            conn = get_db()
+            try:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT 1 FROM event_registration_users
+                    WHERE first_norm = ? AND last_norm = ?
+                    LIMIT 1
+                """, (first_norm, last_norm))
+                exists = cursor.fetchone() is not None
+            finally:
+                conn.close()
+            return exists
+    except Exception as exc:
+        logger.error(f"Error checking registration name existence: {exc}", exc_info=True)
+        return False
+
+def count_registration_records_in_db(use_postgresql: bool) -> int:
+    """Count registration entries in the persistent store."""
+    try:
+        if use_postgresql:
+            from models import EventRegistrationUser
+            return EventRegistrationUser.query.count()
+        else:
+            conn = get_db()
+            try:
+                cursor = conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM event_registration_users")
+                count = cursor.fetchone()[0] or 0
+            finally:
+                conn.close()
+            return count
+    except Exception as exc:
+        logger.error(f"Error counting registration records: {exc}", exc_info=True)
+        return 0
+
+def insert_registration_records_bulk(records: List[dict], use_postgresql: bool) -> int:
+    """Bulk insert sanitized registration records into the database."""
+    if not records:
+        return 0
+    inserted = 0
+    try:
+        if use_postgresql:
+            from models import db, EventRegistrationUser
+            objects = []
+            for entry in records:
+                first = (entry.get('first_name') or '').strip()
+                last = (entry.get('last_name') or '').strip()
+                phone = normalize_phone(entry.get('phone'))
+                objects.append(EventRegistrationUser(
+                    first_name=first,
+                    last_name=last,
+                    phone=phone,
+                    first_norm=normalize_name(first),
+                    last_norm=normalize_name(last),
+                    phone_norm=phone
+                ))
+            db.session.bulk_save_objects(objects)
+            db.session.commit()
+            inserted = len(objects)
+        else:
+            conn = get_db()
+            try:
+                cursor = conn.cursor()
+                rows = []
+                for entry in records:
+                    first = (entry.get('first_name') or '').strip()
+                    last = (entry.get('last_name') or '').strip()
+                    phone = normalize_phone(entry.get('phone'))
+                    rows.append((
+                        first,
+                        last,
+                        phone,
+                        normalize_name(first),
+                        normalize_name(last),
+                        phone,
+                    ))
+                cursor.executemany("""
+                    INSERT OR IGNORE INTO event_registration_users
+                    (first_name, last_name, phone, first_norm, last_norm, phone_norm, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """, rows)
+                conn.commit()
+                inserted = cursor.rowcount if cursor.rowcount and cursor.rowcount > 0 else len(rows)
+            finally:
+                conn.close()
+    except Exception as exc:
+        logger.error(f"Error inserting registration records: {exc}", exc_info=True)
+    return inserted
+
+def seed_event_registration_table_from_files(use_postgresql: bool) -> int:
+    """Seed the registration table from JSON/CSV files if it's empty."""
+    json_path, csv_path = get_registration_storage_paths()
+    raw_records = load_registration_json_records(json_path)
+    if not raw_records:
+        raw_records = load_registration_csv_records(csv_path)
+    sanitized = sanitize_registration_records(raw_records)
+    if not sanitized:
+        logger.warning("No registration data available to seed database.")
+        return 0
+    inserted = insert_registration_records_bulk(sanitized, use_postgresql)
+    if inserted:
+        logger.info(f"Seeded {inserted} event registration users from files.")
+    return inserted
+
+def sync_registration_files_from_db(use_postgresql: bool) -> None:
+    """Rewrite JSON/CSV snapshots to reflect the database state."""
+    try:
+        records = fetch_registration_records_from_db(use_postgresql)
+        json_path, csv_path = get_registration_storage_paths()
+        persist_registration_records(records, json_path, csv_path)
+        logger.info(f"Synchronized {len(records)} registration records to JSON/CSV snapshots.")
+    except Exception as exc:
+        logger.error(f"Failed to sync registration files from DB: {exc}", exc_info=True)
+
+def ensure_event_registration_storage_initialized(app: Flask) -> None:
+    """Ensure DB-backed registration storage is seeded and snapshots match DB."""
+    use_postgresql = app.config.get('USE_POSTGRESQL', False)
+    try:
+        record_count = count_registration_records_in_db(use_postgresql)
+        if record_count == 0:
+            inserted = seed_event_registration_table_from_files(use_postgresql)
+            record_count = inserted
+        else:
+            logger.info(f"Registration table already has {record_count} entries.")
+        sync_registration_files_from_db(use_postgresql)
+        logger.info(f"Registration storage ready with {record_count} entries.")
+    except Exception as exc:
+        logger.error(f"Failed to initialize registration storage: {exc}", exc_info=True)
+def get_event_registration_records() -> List[dict]:
+    """Load event registration users from the persistent database (fallback to files)."""
+    try:
+        use_postgresql = current_app.config.get('USE_POSTGRESQL', False)
+    except RuntimeError:
+        use_postgresql = bool(os.getenv("DATABASE_URL"))
+
+    records = fetch_registration_records_from_db(use_postgresql)
+    if records:
+        return records
+
+    # If database is empty (first boot), seed from files then retry
+    if count_registration_records_in_db(use_postgresql) == 0:
+        inserted = seed_event_registration_table_from_files(use_postgresql)
+        if inserted:
+            return fetch_registration_records_from_db(use_postgresql)
+
+    # Final fallback: attempt to read JSON directly (should be rare)
+    json_path, _ = get_registration_storage_paths()
+    raw_records = load_registration_json_records(json_path)
+    return sanitize_registration_records(raw_records)
 
 def find_event_registration_entry(first_name: str, last_name: str, phone: str) -> Optional[dict]:
     """Find event registration entry matching first name, last name, and phone."""
@@ -319,13 +590,23 @@ def find_event_registration_entry(first_name: str, last_name: str, phone: str) -
     phone_norm = normalize_phone(phone)
     if not (first_norm and last_norm and phone_norm):
         return None
-    for record in get_event_registration_records():
+    try:
+        use_postgresql = current_app.config.get('USE_POSTGRESQL', False)
+    except RuntimeError:
+        use_postgresql = bool(os.getenv("DATABASE_URL"))
+
+    record = fetch_registration_entry_from_db(first_norm, last_norm, phone_norm, use_postgresql)
+    if record:
+        return record
+
+    # Fallback: scan in-memory list (covers rare race where DB query failed)
+    for entry in get_event_registration_records():
         if (
-            record["first_norm"] == first_norm
-            and record["last_norm"] == last_norm
-            and record["phone_norm"] == phone_norm
+            entry["first_norm"] == first_norm
+            and entry["last_norm"] == last_norm
+            and entry["phone_norm"] == phone_norm
         ):
-            return record
+            return entry
     return None
 
 def format_birthdate(day: int, month: int, year: int) -> str:
@@ -763,6 +1044,15 @@ def create_app() -> Flask:
     # Must be done within app context for database access
     with app.app_context():
         use_postgresql = app.config.get('USE_POSTGRESQL', False)
+
+        if use_postgresql:
+            try:
+                from models import db
+                db.create_all()
+                logger.info("✅ Ensured PostgreSQL tables exist.")
+            except Exception as exc:
+                logger.error(f"❌ Failed to ensure PostgreSQL tables: {exc}", exc_info=True)
+
         app.config['VOTING_ACTIVE'] = get_voting_active_from_db(use_postgresql)
         logger.info(f"✅ Voting session initialized from DB: {'active' if app.config['VOTING_ACTIVE'] else 'inactive'}")
         
@@ -774,6 +1064,12 @@ def create_app() -> Flask:
         except Exception as e:
             logger.warning(f"⚠ Could not clean up expired sessions on startup: {e}")
             # Non-critical error, continue startup
+
+        # Ensure registration data is persisted in DB and snapshots match
+        try:
+            ensure_event_registration_storage_initialized(app)
+        except Exception as exc:
+            logger.error(f"❌ Failed to sync registration storage on startup: {exc}", exc_info=True)
 
     # Add request logging middleware
     @app.before_request
@@ -2522,11 +2818,11 @@ def create_app() -> Flask:
         last_norm = normalize_name(last_name)
         phone_norm = normalized_phone
 
-        existing_records = get_event_registration_records()
-        if any(rec["phone_norm"] == phone_norm for rec in existing_records):
-            return jsonify({"success": False, "message": "Phone number already exists in registration list"}), 409
+        use_postgresql = app.config.get('USE_POSTGRESQL', False)
 
-        if any(rec["first_norm"] == first_norm and rec["last_norm"] == last_norm for rec in existing_records):
+        if registration_phone_exists(phone_norm, use_postgresql):
+            return jsonify({"success": False, "message": "Phone number already exists in registration list"}), 409
+        if registration_name_exists(first_norm, last_norm, use_postgresql):
             return jsonify({"success": False, "message": "A registration entry for this name already exists"}), 409
 
         payload_entry = {
@@ -2535,14 +2831,33 @@ def create_app() -> Flask:
             "phone": normalized_phone
         }
 
-        json_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'event_registration_users.json'))
-        csv_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'event_registration_users.csv'))
-
         try:
-            json_records = load_registration_json_records(json_path)
-            json_records.append(payload_entry)
-            persist_registration_records(json_records, json_path, csv_path)
+            if use_postgresql:
+                from models import db, EventRegistrationUser
+                record = EventRegistrationUser(
+                    first_name=first_name,
+                    last_name=last_name,
+                    phone=normalized_phone,
+                    first_norm=first_norm,
+                    last_norm=last_norm,
+                    phone_norm=phone_norm
+                )
+                db.session.add(record)
+                db.session.commit()
+            else:
+                conn = get_db()
+                try:
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        INSERT INTO event_registration_users
+                        (first_name, last_name, phone, first_norm, last_norm, phone_norm, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    """, (first_name, last_name, normalized_phone, first_norm, last_norm, phone_norm))
+                    conn.commit()
+                finally:
+                    conn.close()
 
+            sync_registration_files_from_db(use_postgresql)
             logger.info("✅ Added event registration user via admin: %s %s (%s)", first_name, last_name, normalized_phone)
             return jsonify({"success": True, "message": "Registration record added successfully"})
         except Exception as exc:
@@ -2571,40 +2886,35 @@ def create_app() -> Flask:
         last_norm = normalize_name(last_name)
         phone_norm = normalized_phone
 
-        json_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'event_registration_users.json'))
-        csv_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'event_registration_users.csv'))
-
         try:
-            json_records = load_registration_json_records(json_path)
-            if not json_records:
-                return jsonify({"success": False, "message": "Sorry, account doesn't exist"}), 404
+            use_postgresql = app.config.get('USE_POSTGRESQL', False)
 
-            updated_records = []
-            match_found = False
+            if use_postgresql:
+                from models import db, EventRegistrationUser
+                record = EventRegistrationUser.query.filter_by(
+                    first_norm=first_norm,
+                    last_norm=last_norm,
+                    phone_norm=phone_norm
+                ).first()
+                if not record:
+                    return jsonify({"success": False, "message": "Sorry, account doesn't exist"}), 404
+                db.session.delete(record)
+                db.session.commit()
+            else:
+                conn = get_db()
+                try:
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        DELETE FROM event_registration_users
+                        WHERE first_norm = ? AND last_norm = ? AND phone_norm = ?
+                    """, (first_norm, last_norm, phone_norm))
+                    if cursor.rowcount == 0:
+                        return jsonify({"success": False, "message": "Sorry, account doesn't exist"}), 404
+                    conn.commit()
+                finally:
+                    conn.close()
 
-            for rec in json_records:
-                rec_first = (rec.get('first_name') or '').strip()
-                rec_last = (rec.get('last_name') or '').strip()
-                rec_phone = (rec.get('phone') or '').strip()
-
-                rec_first_norm = normalize_name(rec_first)
-                rec_last_norm = normalize_name(rec_last)
-                rec_phone_norm = normalize_phone(rec_phone)
-
-                if rec_first_norm == first_norm and rec_last_norm == last_norm and rec_phone_norm == phone_norm:
-                    match_found = True
-                    continue
-
-                updated_records.append({
-                    "first_name": rec_first,
-                    "last_name": rec_last,
-                    "phone": rec_phone
-                })
-
-            if not match_found:
-                return jsonify({"success": False, "message": "Sorry, account doesn't exist"}), 404
-
-            persist_registration_records(updated_records, json_path, csv_path)
+            sync_registration_files_from_db(use_postgresql)
             logger.info("✅ Removed registration entry for %s %s (%s)", first_name, last_name, phone_norm)
 
             # Delete user account from database if it exists
