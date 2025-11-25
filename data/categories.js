@@ -6,7 +6,6 @@ window.CATEGORIES = [
     nominees: [
       "Momoh Precious",
       "Victor Nweze",
-      "Samuel Nasir",
       "Ogbor Edward Nnamdi",
       "Thomas Tunmise",
       "Ayepe Vanessa",

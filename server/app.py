@@ -561,6 +561,83 @@ def ensure_event_registration_storage_initialized(app: Flask) -> None:
         logger.info(f"Registration storage ready with {record_count} entries.")
     except Exception as exc:
         logger.error(f"Failed to initialize registration storage: {exc}", exc_info=True)
+
+
+RETIRED_NOMINEE_MIGRATIONS = [
+    {
+        "key": "migration_remove_samuel_nasir_peacemaker",
+        "category_id": 1,
+        "removed_nominee_id": 3,  # 1-based index in original list
+        "description": "Remove Samuel Nasir from Peacemaker Award and realign votes."
+    }
+]
+
+def apply_retired_nominee_migrations(app: Flask) -> None:
+    """Apply one-time migrations to clean up retired nominees."""
+    use_postgresql = app.config.get('USE_POSTGRESQL', False)
+    for migration in RETIRED_NOMINEE_MIGRATIONS:
+        key = migration["key"]
+        if has_migration_run(use_postgresql, key):
+            continue
+        success = run_retired_nominee_migration(migration, use_postgresql)
+        if success:
+            mark_migration_complete(use_postgresql, key)
+
+def run_retired_nominee_migration(migration: dict, use_postgresql: bool) -> bool:
+    """Delete retired nominee votes and shift subsequent nominee IDs."""
+    category_id = migration["category_id"]
+    removed_nominee_id = migration["removed_nominee_id"]
+    description = migration.get("description", f"Category {category_id} nominee {removed_nominee_id}")
+    deleted_count = 0
+    shifted_count = 0
+    try:
+        if use_postgresql:
+            from models import db, Vote
+            from sqlalchemy import update, and_
+
+            deleted_count = Vote.query.filter_by(
+                category_id=category_id,
+                nominee_id=removed_nominee_id
+            ).delete(synchronize_session=False)
+
+            shift_stmt = update(Vote).where(
+                and_(Vote.category_id == category_id, Vote.nominee_id > removed_nominee_id)
+            ).values(
+                nominee_id=Vote.nominee_id - 1
+            )
+            result = db.session.execute(shift_stmt)
+            shifted_count = result.rowcount or 0
+            db.session.commit()
+        else:
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute(
+                "DELETE FROM votes WHERE category_id = ? AND nominee_id = ?",
+                (category_id, removed_nominee_id)
+            )
+            deleted_count = cursor.rowcount or 0
+            cursor.execute(
+                "UPDATE votes SET nominee_id = nominee_id - 1 WHERE category_id = ? AND nominee_id > ?",
+                (category_id, removed_nominee_id)
+            )
+            shifted_count = cursor.rowcount or 0
+            conn.commit()
+            conn.close()
+
+        logger.info(
+            f"✅ Retired nominee migration applied ({description}). "
+            f"Deleted votes: {deleted_count}, shifted votes: {shifted_count}"
+        )
+        return True
+    except Exception as exc:
+        logger.error(f"❌ Failed to apply migration {description}: {exc}", exc_info=True)
+        try:
+            if use_postgresql:
+                from models import db
+                db.session.rollback()
+        except Exception:
+            pass
+        return False
 def get_event_registration_records() -> List[dict]:
     """Load event registration users from the persistent database (fallback to files)."""
     try:
@@ -738,6 +815,70 @@ def set_voting_active_in_db(use_postgresql: bool, active: bool, updated_by: str 
     except Exception as e:
         logger.error(f"Error setting voting_active in DB: {e}", exc_info=True)
         return False
+
+def get_config_value_from_db(use_postgresql: bool, key: str) -> Optional[str]:
+    """Fetch a configuration value from voting_config table."""
+    try:
+        if use_postgresql:
+            from models import db, VotingConfig
+            config = VotingConfig.query.filter_by(key=key).first()
+            if config:
+                db.session.refresh(config)
+                return config.value
+            return None
+        else:
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT value FROM voting_config WHERE key = ? LIMIT 1", (key,))
+            row = cursor.fetchone()
+            conn.close()
+            return row[0] if row else None
+    except Exception as exc:
+        logger.error(f"Error reading config '{key}' from DB: {exc}", exc_info=True)
+        return None
+
+def set_config_value_in_db(use_postgresql: bool, key: str, value: str, updated_by: str = 'system') -> bool:
+    """Persist a configuration value to voting_config table."""
+    try:
+        if use_postgresql:
+            from models import db, VotingConfig
+            config = VotingConfig.query.filter_by(key=key).first()
+            if config:
+                config.value = value
+                config.updated_by = updated_by
+            else:
+                config = VotingConfig(key=key, value=value, updated_by=updated_by)
+                db.session.add(config)
+            db.session.commit()
+            return True
+        else:
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO voting_config (key, value, updated_by, updated_at)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(key) DO UPDATE SET
+                    value=excluded.value,
+                    updated_by=excluded.updated_by,
+                    updated_at=CURRENT_TIMESTAMP
+            """, (key, value, updated_by))
+            conn.commit()
+            conn.close()
+            return True
+    except Exception as exc:
+        logger.error(f"Error writing config '{key}' to DB: {exc}", exc_info=True)
+        return False
+
+def has_migration_run(use_postgresql: bool, key: str) -> bool:
+    """Check if a one-time migration flag is set."""
+    value = get_config_value_from_db(use_postgresql, key)
+    return value == 'done'
+
+def mark_migration_complete(use_postgresql: bool, key: str) -> bool:
+    """Mark a migration flag as completed."""
+    return set_config_value_in_db(use_postgresql, key, 'done', updated_by='system')
+
+
 
 def save_session_to_db(use_postgresql: bool, session_id: str, user_id: int, session_data: dict, expires_at: datetime) -> bool:
     """Save session to database for persistence"""
@@ -1070,6 +1211,12 @@ def create_app() -> Flask:
             ensure_event_registration_storage_initialized(app)
         except Exception as exc:
             logger.error(f"❌ Failed to sync registration storage on startup: {exc}", exc_info=True)
+
+        # Apply any one-time nominee cleanup migrations (e.g., removing invalid entries)
+        try:
+            apply_retired_nominee_migrations(app)
+        except Exception as exc:
+            logger.error(f"❌ Failed to run retired nominee migrations: {exc}", exc_info=True)
 
     # Add request logging middleware
     @app.before_request
