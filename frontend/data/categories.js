@@ -10,8 +10,7 @@ window.CATEGORIES = [
       "Thomas Tunmise",
       "Ayepe Vanessa",
       "Richard Gbadamashi",
-      "Gamsheya Lumsunya",
-      "Confidence Felix"
+      "Gamsheya Lumsunya"
     ]
   },
   {

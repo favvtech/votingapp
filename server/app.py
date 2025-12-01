@@ -569,6 +569,12 @@ RETIRED_NOMINEE_MIGRATIONS = [
         "category_id": 1,
         "removed_nominee_id": 3,  # 1-based index in original list
         "description": "Remove Samuel Nasir from Peacemaker Award and realign votes."
+    },
+    {
+        "key": "migration_remove_confidence_felix_peacemaker",
+        "category_id": 1,
+        "removed_nominee_id": 8,  # 1-based index after Samuel removal
+        "description": "Remove Confidence Felix from Peacemaker Award and realign votes."
     }
 ]
 
